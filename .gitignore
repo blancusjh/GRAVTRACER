@@ -1,0 +1,24 @@
+# Build artifacts
+build/
+*.o
+*.mod
+*.smod
+*.so
+*.dylib
+*.a
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Outputs
+output/
+*.png
+*.npy
+*.h5
+
+# OS
+.DS_Store

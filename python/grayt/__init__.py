@@ -17,9 +17,13 @@ from .api import (BlackHole, Camera, ThinDisk, Image, render, shadow,
                   STATUS_ESCAPED, STATUS_CAPTURED, STATUS_DISK,
                   STATUS_FAILED)
 from .scene import Scene
+from .system import (PhysicalSystem, System, Screen, ImageSource, Ray,
+                     null_momentum, bl_to_cart)
 
 __all__ = ["BlackHole", "Camera", "ThinDisk", "Image", "Scene", "render",
            "shadow", "trace", "camera_ray", "flux_profile",
+           "PhysicalSystem", "System", "Screen", "ImageSource", "Ray",
+           "null_momentum", "bl_to_cart",
            "STATUS_ESCAPED", "STATUS_CAPTURED", "STATUS_DISK",
            "STATUS_FAILED"]
 

@@ -17,7 +17,7 @@ MODULE RAYTRACER
    PRIVATE
 
    PUBLIC :: CAMERA_INIT, TRACE_RAY, RENDER_IMAGE, TRACE_GEODESIC
-   PUBLIC :: GET_HORIZON, GET_ISCO
+   PUBLIC :: GET_HORIZON, GET_ISCO, TRACE_TO_PLANE, TRACE_BUNDLE_TO_PLANE
 
    REAL(WP), PARAMETER :: HMIN = 1.0E-12_WP
    REAL(WP), PARAMETER :: HMAX = 25.0_WP
@@ -256,6 +256,129 @@ CONTAINS
       END DO
       !$OMP END PARALLEL DO
    END SUBROUTINE RENDER_IMAGE
+
+   PURE SUBROUTINE BL_TO_CART(R, TH, PH, XC)
+      ! Pseudo-Cartesian embedding used for flat-space surfaces
+      ! (sources, screens): x = r sin(th) cos(ph), etc. Exact only
+      ! asymptotically; surfaces should sit far from the hole.
+      REAL(WP), INTENT(IN)  :: R, TH, PH
+      REAL(WP), INTENT(OUT) :: XC(3)
+      XC(1) = R*SIN(TH)*COS(PH)
+      XC(2) = R*SIN(TH)*SIN(PH)
+      XC(3) = R*COS(TH)
+   END SUBROUTINE BL_TO_CART
+
+   PURE FUNCTION PLANE_SIGNED_DIST(Y, NHAT, DPLANE) RESULT(S)
+      REAL(WP), INTENT(IN) :: Y(6), NHAT(3), DPLANE
+      REAL(WP) :: S, XC(3)
+      CALL BL_TO_CART(Y(2), Y(3), Y(4), XC)
+      S = NHAT(1)*XC(1) + NHAT(2)*XC(2) + NHAT(3)*XC(3) - DPLANE
+   END FUNCTION PLANE_SIGNED_DIST
+
+   SUBROUTINE TRACE_TO_PLANE(A, PT, PPHI, Y0, METHOD, RTOL, ATOL, H0, &
+                             NHAT, DPLANE, RMAX, MAXSTEP, STATUS, YOUT, &
+                             NSTEPS)
+      ! Integrate one ray (sign of H0 sets the direction of the affine
+      ! parameter) until it crosses the Cartesian plane n.x = DPLANE
+      ! (status 2), is captured (1), escapes past RMAX (0), or fails (3).
+      REAL(WP), INTENT(IN)  :: A, PT, PPHI, Y0(6), RTOL, ATOL, H0
+      REAL(WP), INTENT(IN)  :: NHAT(3), DPLANE, RMAX
+      INTEGER, INTENT(IN)   :: METHOD, MAXSTEP
+      INTEGER, INTENT(OUT)  :: STATUS, NSTEPS
+      REAL(WP), INTENT(OUT) :: YOUT(6)
+      REAL(WP) :: Y(6), Y1(6), YS(6), EV(6), SC(6)
+      REAL(WP) :: H, HUSED, ERR, RCAP, S0, S1, SLO, SHI, S
+      INTEGER :: N, K
+
+      RCAP = HORIZON_RADIUS(A) + CAPTURE_BUFFER
+      Y = Y0
+      YOUT = Y0
+      H = H0
+      STATUS = 3
+      NSTEPS = 0
+      S0 = PLANE_SIGNED_DIST(Y, NHAT, DPLANE)
+
+      DO N = 1, MAXSTEP
+         CALL RK_EMBEDDED_STEP(METHOD, A, PT, PPHI, Y, H, Y1, EV)
+         SC = ATOL + RTOL*MAX(ABS(Y), ABS(Y1))
+         ERR = SQRT(SUM((EV/SC)**2)/6.0_WP)
+         ERR = MAX(ERR, 1.0E-30_WP)
+
+         IF (ERR > 1.0_WP) THEN
+            H = H*MAX(0.2_WP, SAFETY*ERR**(-0.25_WP))
+            IF (ABS(H) < HMIN) RETURN
+            CYCLE
+         END IF
+
+         NSTEPS = NSTEPS + 1
+         HUSED = H
+         H = H*MIN(5.0_WP, MAX(0.2_WP, SAFETY*ERR**(-0.2_WP)))
+         IF (ABS(H) > HMAX) H = SIGN(HMAX, H)
+         IF (ABS(H) < HMIN) H = SIGN(HMIN, H)
+
+         IF (Y1(2) /= Y1(2)) RETURN
+
+         S1 = PLANE_SIGNED_DIST(Y1, NHAT, DPLANE)
+         IF (S0*S1 < 0.0_WP) THEN
+            ! Bisect the accepted step onto the plane
+            SLO = 0.0_WP
+            SHI = 1.0_WP
+            YOUT = Y1
+            DO K = 1, 48
+               S = 0.5_WP*(SLO + SHI)
+               CALL RK_EMBEDDED_STEP(METHOD, A, PT, PPHI, Y, S*HUSED, YS, EV)
+               IF (S0*PLANE_SIGNED_DIST(YS, NHAT, DPLANE) <= 0.0_WP) THEN
+                  SHI = S
+                  YOUT = YS
+               ELSE
+                  SLO = S
+               END IF
+            END DO
+            STATUS = 2
+            RETURN
+         END IF
+
+         IF (Y1(2) <= RCAP .OR. Y1(2) <= 0.0_WP) THEN
+            STATUS = 1
+            YOUT = Y1
+            RETURN
+         END IF
+         IF (Y1(2) >= RMAX) THEN
+            STATUS = 0
+            YOUT = Y1
+            RETURN
+         END IF
+
+         Y = Y1
+         S0 = S1
+      END DO
+   END SUBROUTINE TRACE_TO_PLANE
+
+   SUBROUTINE TRACE_BUNDLE_TO_PLANE(A, PTS, PPHIS, Y0S, NRAY, METHOD, &
+                                    RTOL, ATOL, H0, NHAT, DPLANE, RMAX, &
+                                    MAXSTEP, STATUS, YOUTS)
+      ! OpenMP fan-out of TRACE_TO_PLANE over a bundle of rays.
+      REAL(WP), INTENT(IN)  :: A, PTS(NRAY), PPHIS(NRAY), Y0S(NRAY, 6)
+      REAL(WP), INTENT(IN)  :: RTOL, ATOL, H0, NHAT(3), DPLANE, RMAX
+      INTEGER, INTENT(IN)   :: NRAY, METHOD, MAXSTEP
+      INTEGER, INTENT(OUT)  :: STATUS(NRAY)
+      REAL(WP), INTENT(OUT) :: YOUTS(NRAY, 6)
+      REAL(WP) :: YOUT(6)
+      INTEGER :: I, ST, NS
+
+      !$OMP PARALLEL DO SCHEDULE(DYNAMIC, 16) DEFAULT(NONE) &
+      !$OMP SHARED(A, PTS, PPHIS, Y0S, NRAY, METHOD, RTOL, ATOL, H0) &
+      !$OMP SHARED(NHAT, DPLANE, RMAX, MAXSTEP, STATUS, YOUTS) &
+      !$OMP PRIVATE(I, ST, NS, YOUT)
+      DO I = 1, NRAY
+         CALL TRACE_TO_PLANE(A, PTS(I), PPHIS(I), Y0S(I, :), METHOD, &
+                             RTOL, ATOL, H0, NHAT, DPLANE, RMAX, MAXSTEP, &
+                             ST, YOUT, NS)
+         STATUS(I) = ST
+         YOUTS(I, :) = YOUT
+      END DO
+      !$OMP END PARALLEL DO
+   END SUBROUTINE TRACE_BUNDLE_TO_PLANE
 
    SUBROUTINE TRACE_GEODESIC(A, Y0, PT, PPHI, METHOD, RTOL, ATOL, H0, &
                              LAM_MAX, NMAX, TRAJ, HERR, NOUT)

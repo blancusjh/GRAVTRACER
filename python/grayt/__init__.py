@@ -13,15 +13,17 @@ Quick start::
     img.plot()
 """
 from .api import (BlackHole, Camera, ThinDisk, Image, render, shadow,
-                  trace, camera_ray, flux_profile,
+                  trace, camera_ray, flux_profile, orbit_ic,
                   STATUS_ESCAPED, STATUS_CAPTURED, STATUS_DISK,
                   STATUS_FAILED)
 from .scene import Scene
+from .plotting import plot_orbits_2d
 from .system import (PhysicalSystem, System, Screen, ImageSource, Ray,
                      Photograph, null_momentum, bl_to_cart)
 
 __all__ = ["BlackHole", "Camera", "ThinDisk", "Image", "Scene", "render",
-           "shadow", "trace", "camera_ray", "flux_profile",
+           "shadow", "trace", "camera_ray", "flux_profile", "orbit_ic",
+           "plot_orbits_2d",
            "PhysicalSystem", "System", "Screen", "ImageSource", "Ray",
            "Photograph",
            "null_momentum", "bl_to_cart",

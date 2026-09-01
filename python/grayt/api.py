@@ -196,6 +196,26 @@ def camera_ray(black_hole: BlackHole, camera: Camera, x: float, y: float):
     return y0, float(pt), float(pphi)
 
 
+def orbit_ic(black_hole: BlackHole, r0: float, energy: float,
+             angular_momentum: float, mass: float = 1.0,
+             theta0: float = 90.0, pr_sign: int = 0):
+    """Initial conditions for a geodesic with conserved E and L.
+
+    ``mass=1`` gives a time-like orbit (H = -1/2), ``mass=0`` a photon.
+    ``pr_sign``: sign of the initial radial momentum (0 = turning point).
+    Returns ``(y0, p_t, p_phi)`` for ``grayt.trace``.
+    """
+    th = np.deg2rad(theta0)
+    p_t, p_phi = -energy, angular_momentum
+    gu, _, _ = _core.kerr_metric.metric_contra(black_hole.a, r0, th)
+    pr2 = (-mass**2 - (gu[0]*p_t**2 + 2*gu[1]*p_t*p_phi +
+                       gu[4]*p_phi**2))/gu[2]
+    if pr2 < -1e-12:
+        raise ValueError("no orbit with these (E, L) at r0: p_r^2 < 0")
+    p_r = pr_sign*np.sqrt(max(pr2, 0.0))
+    return np.array([0.0, r0, th, 0.0, p_r, 0.0]), p_t, p_phi
+
+
 def flux_profile(black_hole: BlackHole, r_out: float = 20.0, n: int = 2000):
     """Radial Page-Thorne flux profile on [r_isco, r_out]."""
     rs, fs = _core.disk_model.flux_profile(black_hole.a, r_out, n)

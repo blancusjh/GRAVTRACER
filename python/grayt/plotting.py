@@ -47,6 +47,55 @@ def plot_shadow(img, ax=None, analytic_xy=None):
     return ax
 
 
+def plot_orbits_2d(orbits, black_hole=None, plane="xy", ax=None,
+                   colors=None, lw=0.9, legend=True):
+    """2D projection of ray/particle orbits (paper Fig. 3/14 style).
+
+    ``orbits``: list of entries, each one of
+      - the dict returned by ``grayt.trace`` (keys r, theta, phi),
+      - a ``grayt.Ray`` (Cartesian ``points``),
+      - an (N, 3) Cartesian array,
+    optionally wrapped as ``(orbit, label)``.
+    ``plane``: "xy" (equatorial projection), "xz" or "yz".
+    The event horizon of ``black_hole`` is drawn as a circle at the
+    origin.
+    """
+    import matplotlib.pyplot as plt
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(5.2, 5.2))
+    comp = {"xy": (0, 1), "xz": (0, 2), "yz": (1, 2)}[plane]
+
+    for k, entry in enumerate(orbits):
+        label = None
+        orbit = entry
+        if isinstance(entry, tuple):
+            orbit, label = entry
+        if isinstance(orbit, dict):
+            from .system import bl_to_cart
+            pts = bl_to_cart(orbit["r"], orbit["theta"], orbit["phi"])
+        elif hasattr(orbit, "points"):
+            pts = orbit.points
+        else:
+            pts = np.asarray(orbit)
+        color = colors[k] if colors else None
+        ax.plot(pts[:, comp[0]], pts[:, comp[1]], lw=lw, color=color,
+                label=label)
+
+    if black_hole is not None:
+        th = np.linspace(0, 2*np.pi, 200)
+        rh = black_hole.horizon
+        ax.fill(rh*np.cos(th), rh*np.sin(th), facecolor="white",
+                edgecolor="black", lw=1.2, zorder=3)
+    ax.set_aspect("equal")
+    labels = {"xy": ("$x$", "$y$"), "xz": ("$x$", "$z$"),
+              "yz": ("$y$", "$z$")}[plane]
+    ax.set_xlabel(labels[0]); ax.set_ylabel(labels[1])
+    if legend and any(isinstance(e, tuple) and e[1] for e in orbits):
+        ax.legend(loc="lower right", fontsize=8)
+    return ax
+
+
 def plot_lensing(img, ax=None, mesh_deg=6.0):
     """Celestial-sphere quadrant coloring (paper Figs. 9-12).
 

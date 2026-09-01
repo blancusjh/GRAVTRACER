@@ -88,6 +88,7 @@ go to `output/` (git-ignored), keeping code and artifacts separate.
 | `examples/disk_images.py` | Fig. 13 (`--res 2048 1024`) |
 | `examples/image_formation.py` | forward (collimated) projection demo |
 | `examples/photograph.py` | lambertian imaging of a loaded picture |
+| `examples/orbits2d.py` | 2D orbit projections (Figs. 3/14 style), incl. time-like |
 
 ### Errata found in the paper (as printed)
 

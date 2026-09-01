@@ -103,6 +103,13 @@ Documented where implemented in the code:
 3. **Eq. (22)**: the printed g equals ν_em/ν_obs; the redshift factor used
    in I_obs = g³ I_em is its inverse (`src/disk_model.f90`).
 
+## Review & roadmap
+
+A three-way code review (architecture/physics, CLI user, notebook user)
+with the agreed action plan and future-extension roadmap lives in
+[docs/REVIEW.md](docs/REVIEW.md). A runnable tutorial notebook is at
+[notebooks/grayt_demo.ipynb](notebooks/grayt_demo.ipynb).
+
 ## Status
 
 - [x] M0 planning + skeleton & build (f2py/meson, `.f2py_f2cmap`)

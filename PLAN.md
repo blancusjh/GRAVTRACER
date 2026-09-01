@@ -132,7 +132,17 @@ reproducibility.
   Fig. 8 timings), remaining integrators, q-metric (Appendix A),
   time-like geodesics (Fig. 14).
 
-## 4. Key numbers for tests
+## 4. Errata in the paper discovered during implementation
+
+- **Eq. (7):** sign of the (g_tφ/g_φφ)L term in 𝒫^t must be negative
+  (their own Λ matrix has it right); otherwise camera ICs are not null.
+- **Eq. (18):** numerator should read g_tφ + g_tt·l₀; as printed the
+  Schwarzschild limit gives Ω = −l₀ (superluminal at large r).
+- **Eq. (22):** printed expression is ν_em/ν_obs; the g in I_obs = g³I_em
+  is its inverse.
+- **Fig. 13 caption:** says a = 0.998 where the panel labels say a = 0.95.
+
+## 5. Key numbers for tests
 
 - r_isco: 6.0 (a=0), ≈ 4.2330 (a=0.5), ≈ 1.9372 (a=0.95) [prograde]
 - r_H: 2.0 (a=0), ≈ 1.8660 (a=0.5), ≈ 1.3122 (a=0.95)

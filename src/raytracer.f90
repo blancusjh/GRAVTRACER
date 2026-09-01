@@ -19,7 +19,8 @@ MODULE RAYTRACER
    USE KERR_METRIC, ONLY: HORIZON_RADIUS, ISCO_RADIUS
    USE SPACETIME, ONLY: METRIC_COV, INNER_BOUNDARY, MID_KERR
    USE GEODESIC_EOM, ONLY: HAMILTONIAN_CONSTRAINT
-   USE RK_INTEGRATORS, ONLY: RK_EMBEDDED_STEP
+   USE RK_INTEGRATORS, ONLY: RK_EMBEDDED_STEP, RKDP45_STEP_FSAL, &
+                             DP45_DENSE_PREP, DP45_DENSE_EVAL, METHOD_RKDP45
    USE DISK_MODEL, ONLY: INIT_FLUX_TABLE, PT_FLUX, REDSHIFT_FACTOR
    IMPLICIT NONE
    PRIVATE
@@ -59,14 +60,22 @@ CONTAINS
    ! ------------------------------------------------- shared machinery
 
    SUBROUTINE ADVANCE_ADAPTIVE(METHOD, MID, PAR, PT, PPHI, RTOL, ATOL, &
-                               Y, H, Y1, HUSED, OK)
+                               Y, H, Y1, HUSED, OK, KS, K1_VALID)
       ! Take one accepted step: attempt with the current H, shrink on
       ! rejection, and on acceptance store the used step in HUSED and
       ! leave the suggestion for the next step in H (clamped to
       ! [HMIN, HMAX]). OK = .FALSE. on step underflow or NaN state.
+      !
+      ! For Dormand-Prince, KS carries the seven stages (FSAL: with
+      ! K1_VALID, KS(:, 1) = f(Y) is reused instead of recomputed; on
+      ! exit KS holds the stages of the accepted step for dense output).
+      ! After advancing Y to Y1 the caller must shift KS(:, 1) = KS(:, 7)
+      ! to keep the FSAL reuse valid. KS/K1_VALID are unused for the
+      ! other methods.
       INTEGER, INTENT(IN)     :: METHOD, MID
       REAL(WP), INTENT(IN)    :: PAR(4), PT, PPHI, RTOL, ATOL, Y(6)
-      REAL(WP), INTENT(INOUT) :: H
+      REAL(WP), INTENT(INOUT) :: H, KS(6, 7)
+      LOGICAL, INTENT(INOUT)  :: K1_VALID
       REAL(WP), INTENT(OUT)   :: Y1(6), HUSED
       LOGICAL, INTENT(OUT)    :: OK
       REAL(WP) :: EV(6), SC(6), ERR
@@ -75,7 +84,13 @@ CONTAINS
       OK = .FALSE.
       HUSED = H
       DO K = 1, MAX_REJECTS
-         CALL RK_EMBEDDED_STEP(METHOD, MID, PAR, PT, PPHI, Y, H, Y1, EV)
+         IF (METHOD == METHOD_RKDP45) THEN
+            CALL RKDP45_STEP_FSAL(MID, PAR, PT, PPHI, Y, H, KS, K1_VALID, &
+                                  Y1, EV)
+            K1_VALID = .TRUE.   ! KS(:, 1) = f(Y) holds for retries at this Y
+         ELSE
+            CALL RK_EMBEDDED_STEP(METHOD, MID, PAR, PT, PPHI, Y, H, Y1, EV)
+         END IF
          SC = ATOL + RTOL*MAX(ABS(Y), ABS(Y1))
          ERR = SQRT(SUM((EV/SC)**2)/6.0_WP)
          ERR = MAX(ERR, 1.0E-30_WP)
@@ -112,15 +127,24 @@ CONTAINS
    END FUNCTION EVENT_VALUE
 
    SUBROUTINE REFINE_EVENT(METHOD, MID, PAR, PT, PPHI, Y, HUSED, &
-                           EID, EPAR, YFULL, YC)
+                           EID, EPAR, YFULL, KS, YC)
       ! Bisect the fraction of an accepted step (from Y, size HUSED,
       ! landing at YFULL) onto the sign change of event EID.
+      !
+      ! For Dormand-Prince the bisection runs on the free 4th-order
+      ! dense-output interpolant built from the stages KS of the
+      ! accepted step -- no extra RHS evaluations. The other methods
+      ! have no free interpolant and re-integrate partial steps.
       INTEGER, INTENT(IN)   :: METHOD, MID, EID
       REAL(WP), INTENT(IN)  :: PAR(4), PT, PPHI, Y(6), HUSED, EPAR(4)
-      REAL(WP), INTENT(IN)  :: YFULL(6)
+      REAL(WP), INTENT(IN)  :: YFULL(6), KS(6, 7)
       REAL(WP), INTENT(OUT) :: YC(6)
-      REAL(WP) :: S0, SLO, SHI, S, YS(6), EV(6)
+      REAL(WP) :: S0, SLO, SHI, S, YS(6), EV(6), RCONT(6, 5)
+      LOGICAL :: DENSE
       INTEGER :: K
+
+      DENSE = (METHOD == METHOD_RKDP45)
+      IF (DENSE) CALL DP45_DENSE_PREP(Y, YFULL, HUSED, KS, RCONT)
 
       S0 = EVENT_VALUE(EID, EPAR, Y)
       SLO = 0.0_WP
@@ -128,7 +152,12 @@ CONTAINS
       YC = YFULL
       DO K = 1, BISECTIONS
          S = 0.5_WP*(SLO + SHI)
-         CALL RK_EMBEDDED_STEP(METHOD, MID, PAR, PT, PPHI, Y, S*HUSED, YS, EV)
+         IF (DENSE) THEN
+            CALL DP45_DENSE_EVAL(RCONT, S, YS)
+         ELSE
+            CALL RK_EMBEDDED_STEP(METHOD, MID, PAR, PT, PPHI, Y, S*HUSED, &
+                                  YS, EV)
+         END IF
          IF (S0*EVENT_VALUE(EID, EPAR, YS) <= 0.0_WP) THEN
             SHI = S
             YC = YS
@@ -182,18 +211,22 @@ CONTAINS
    ! --------------------------------------------------------- drivers
 
    SUBROUTINE TRACE_RAY(MID, PAR, PT, PPHI, Y0, METHOD, RTOL, ATOL, &
-                        R_ESC, DISK_ON, RIN, ROUT, MAXSTEP, STATUS, &
-                        YOUT, HERR_MAX, NSTEPS)
+                        R_ESC, DISK_ON, RIN, ROUT, MAXSTEP, ERRMON, &
+                        STATUS, YOUT, HERR_MAX, NSTEPS)
       ! Backward ray integration (negative steps) until equatorial disk
       ! hit, capture, or escape (landed exactly on the sphere r = R_ESC).
-      INTEGER, INTENT(IN)   :: MID, METHOD, DISK_ON, MAXSTEP
+      ! ERRMON = 0 skips the per-step Hamiltonian-constraint monitor
+      ! (one metric evaluation per step, diagnostics only); HERR_MAX is
+      ! then 0.
+      INTEGER, INTENT(IN)   :: MID, METHOD, DISK_ON, MAXSTEP, ERRMON
+!F2PY INTEGER OPTIONAL, INTENT(IN) :: ERRMON = 1
       REAL(WP), INTENT(IN)  :: PAR(4), PT, PPHI, Y0(6), RTOL, ATOL
       REAL(WP), INTENT(IN)  :: R_ESC, RIN, ROUT
       INTEGER, INTENT(OUT)  :: STATUS, NSTEPS
       REAL(WP), INTENT(OUT) :: YOUT(6), HERR_MAX
-      REAL(WP) :: Y(6), Y1(6), YC(6), H, HUSED, RCAP, EPAR(4)
+      REAL(WP) :: Y(6), Y1(6), YC(6), H, HUSED, RCAP, EPAR(4), KS(6, 7)
       INTEGER :: N
-      LOGICAL :: OK
+      LOGICAL :: OK, K1V
 
       RCAP = INNER_BOUNDARY(MID, PAR) + CAPTURE_BUFFER
       Y = Y0
@@ -202,19 +235,22 @@ CONTAINS
       HERR_MAX = 0.0_WP
       STATUS = 3
       NSTEPS = 0
+      K1V = .FALSE.
 
       DO N = 1, MAXSTEP
          CALL ADVANCE_ADAPTIVE(METHOD, MID, PAR, PT, PPHI, RTOL, ATOL, &
-                               Y, H, Y1, HUSED, OK)
+                               Y, H, Y1, HUSED, OK, KS, K1V)
          IF (.NOT. OK) RETURN
          NSTEPS = NSTEPS + 1
-         HERR_MAX = MAX(HERR_MAX, &
-                        ABS(HAMILTONIAN_CONSTRAINT(MID, PAR, PT, PPHI, Y1)))
+         IF (ERRMON /= 0) THEN
+            HERR_MAX = MAX(HERR_MAX, &
+                           ABS(HAMILTONIAN_CONSTRAINT(MID, PAR, PT, PPHI, Y1)))
+         END IF
 
          IF (DISK_ON == 1 .AND. COS(Y(3))*COS(Y1(3)) < 0.0_WP) THEN
             EPAR = 0.0_WP
             CALL REFINE_EVENT(METHOD, MID, PAR, PT, PPHI, Y, HUSED, &
-                              EVENT_EQUATOR, EPAR, Y1, YC)
+                              EVENT_EQUATOR, EPAR, Y1, KS, YC)
             IF (YC(2) >= RIN .AND. YC(2) <= ROUT) THEN
                STATUS = 2
                YOUT = YC
@@ -231,11 +267,12 @@ CONTAINS
             STATUS = 0
             EPAR = (/R_ESC, 0.0_WP, 0.0_WP, 0.0_WP/)
             CALL REFINE_EVENT(METHOD, MID, PAR, PT, PPHI, Y, HUSED, &
-                              EVENT_SPHERE, EPAR, Y1, YOUT)
+                              EVENT_SPHERE, EPAR, Y1, KS, YOUT)
             RETURN
          END IF
 
          Y = Y1
+         IF (METHOD == METHOD_RKDP45) KS(:, 1) = KS(:, 7)   ! FSAL shift
       END DO
    END SUBROUTINE TRACE_RAY
 
@@ -250,9 +287,9 @@ CONTAINS
       REAL(WP), INTENT(IN)  :: NHAT(3), DPLANE, RMAX
       INTEGER, INTENT(OUT)  :: STATUS, NSTEPS
       REAL(WP), INTENT(OUT) :: YOUT(6)
-      REAL(WP) :: Y(6), Y1(6), H, HUSED, RCAP, EPAR(4), S0, S1
+      REAL(WP) :: Y(6), Y1(6), H, HUSED, RCAP, EPAR(4), S0, S1, KS(6, 7)
       INTEGER :: N
-      LOGICAL :: OK
+      LOGICAL :: OK, K1V
 
       RCAP = INNER_BOUNDARY(MID, PAR) + CAPTURE_BUFFER
       EPAR(1:3) = NHAT
@@ -262,11 +299,12 @@ CONTAINS
       H = H0
       STATUS = 3
       NSTEPS = 0
+      K1V = .FALSE.
       S0 = EVENT_VALUE(EVENT_PLANE, EPAR, Y)
 
       DO N = 1, MAXSTEP
          CALL ADVANCE_ADAPTIVE(METHOD, MID, PAR, PT, PPHI, RTOL, ATOL, &
-                               Y, H, Y1, HUSED, OK)
+                               Y, H, Y1, HUSED, OK, KS, K1V)
          IF (.NOT. OK) RETURN
          NSTEPS = NSTEPS + 1
 
@@ -274,7 +312,7 @@ CONTAINS
          IF (S0*S1 < 0.0_WP) THEN
             STATUS = 2
             CALL REFINE_EVENT(METHOD, MID, PAR, PT, PPHI, Y, HUSED, &
-                              EVENT_PLANE, EPAR, Y1, YOUT)
+                              EVENT_PLANE, EPAR, Y1, KS, YOUT)
             RETURN
          END IF
 
@@ -290,6 +328,7 @@ CONTAINS
          END IF
 
          Y = Y1
+         IF (METHOD == METHOD_RKDP45) KS(:, 1) = KS(:, 7)   ! FSAL shift
          S0 = S1
       END DO
    END SUBROUTINE TRACE_TO_PLANE
@@ -331,8 +370,8 @@ CONTAINS
       REAL(WP), INTENT(IN)  :: H0, LAM_MAX
       REAL(WP), INTENT(OUT) :: TRAJ(NMAX, 7), HERR(NMAX)
       INTEGER, INTENT(OUT)  :: NOUT
-      REAL(WP) :: Y(6), Y1(6), H, HUSED, LAM, RCAP
-      LOGICAL :: OK
+      REAL(WP) :: Y(6), Y1(6), H, HUSED, LAM, RCAP, KS(6, 7)
+      LOGICAL :: OK, K1V
 
       RCAP = INNER_BOUNDARY(MID, PAR) + CAPTURE_BUFFER
       Y = Y0
@@ -341,16 +380,18 @@ CONTAINS
       NOUT = 0
       TRAJ = 0.0_WP
       HERR = 0.0_WP
+      K1V = .FALSE.
 
       DO
          IF (NOUT >= NMAX) EXIT
          IF (ABS(LAM) >= ABS(LAM_MAX)) EXIT
          CALL ADVANCE_ADAPTIVE(METHOD, MID, PAR, PT, PPHI, RTOL, ATOL, &
-                               Y, H, Y1, HUSED, OK)
+                               Y, H, Y1, HUSED, OK, KS, K1V)
          IF (.NOT. OK) EXIT
 
          LAM = LAM + HUSED
          Y = Y1
+         IF (METHOD == METHOD_RKDP45) KS(:, 1) = KS(:, 7)   ! FSAL shift
          NOUT = NOUT + 1
          TRAJ(NOUT, 1) = LAM
          TRAJ(NOUT, 2:7) = Y
@@ -364,8 +405,8 @@ CONTAINS
 
    SUBROUTINE RENDER_IMAGE(MID, PAR, R0, THETA0, PHI0, XMIN, XMAX, YMIN, &
                            YMAX, NX, NY, METHOD, RTOL, ATOL, DISK_ON, &
-                           RIN_IN, ROUT, L0, MAXSTEP, INTENS, GMAP, RHIT, &
-                           STATUS, HERRM, THF, PHF)
+                           RIN_IN, ROUT, L0, MAXSTEP, ERRMON, INTENS, GMAP, &
+                           RHIT, STATUS, HERRM, THF, PHF)
       ! Render the full image plane. Pixel (I, J) maps to
       !   x = XMIN + (XMAX-XMIN)*(I-1/2)/NX,  y = YMIN + (YMAX-YMIN)*(J-1/2)/NY.
       ! The thin-disk model (Page-Thorne flux, redshift) is Kerr-only:
@@ -376,9 +417,11 @@ CONTAINS
       !   GMAP   : redshift factor g (disk hits, else 0)
       !   RHIT   : radius of the disk hit (else 0)
       !   STATUS : ray status code per pixel
-      !   HERRM  : max |H| along each ray (constraint error)
+      !   HERRM  : max |H| along each ray (constraint error; all zero
+      !            when ERRMON = 0, which skips the per-step monitor)
       !   THF/PHF: final theta, phi for escaped rays (celestial sphere)
-      INTEGER, INTENT(IN)  :: MID, NX, NY, METHOD, DISK_ON, MAXSTEP
+      INTEGER, INTENT(IN)  :: MID, NX, NY, METHOD, DISK_ON, MAXSTEP, ERRMON
+!F2PY INTEGER OPTIONAL, INTENT(IN) :: ERRMON = 1
       REAL(WP), INTENT(IN) :: PAR(4), R0, THETA0, PHI0
       REAL(WP), INTENT(IN) :: XMIN, XMAX, YMIN, YMAX
       REAL(WP), INTENT(IN) :: RTOL, ATOL, RIN_IN, ROUT, L0
@@ -402,7 +445,7 @@ CONTAINS
       !$OMP PARALLEL DO COLLAPSE(2) SCHEDULE(DYNAMIC, 4) DEFAULT(NONE) &
       !$OMP SHARED(MID, PAR, R0, THETA0, PHI0, XMIN, XMAX, YMIN, YMAX) &
       !$OMP SHARED(NX, NY, METHOD, RTOL, ATOL, DISK_ON, RIN, ROUT, L0) &
-      !$OMP SHARED(MAXSTEP, R_ESC, INTENS, GMAP, RHIT, STATUS, HERRM, THF, PHF) &
+      !$OMP SHARED(MAXSTEP, ERRMON, R_ESC, INTENS, GMAP, RHIT, STATUS, HERRM, THF, PHF) &
       !$OMP PRIVATE(I, J, X, YY, Y0, YOUT, PT, PPHI, HE, G, ST, NS)
       DO J = 1, NY
          DO I = 1, NX
@@ -410,8 +453,8 @@ CONTAINS
             YY = YMIN + (YMAX - YMIN)*(REAL(J, WP) - 0.5_WP)/REAL(NY, WP)
             CALL CAMERA_INIT(MID, PAR, R0, THETA0, PHI0, X, YY, Y0, PT, PPHI)
             CALL TRACE_RAY(MID, PAR, PT, PPHI, Y0, METHOD, RTOL, ATOL, &
-                           R_ESC, DISK_ON, RIN, ROUT, MAXSTEP, ST, YOUT, &
-                           HE, NS)
+                           R_ESC, DISK_ON, RIN, ROUT, MAXSTEP, ERRMON, &
+                           ST, YOUT, HE, NS)
             STATUS(I, J) = ST
             HERRM(I, J) = HE
             IF (ST == 2) THEN

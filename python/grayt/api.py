@@ -43,10 +43,15 @@ def _method_id(name: str) -> int:
 
 def render(spacetime: Spacetime, camera: Camera, disk: ThinDisk | None = None,
            method: str = "rkdp45", rtol: float = 1e-8, atol: float = 1e-10,
-           max_steps: int = 500_000) -> Image:
+           max_steps: int = 500_000, constraint_monitor: bool = True) -> Image:
     """Trace every pixel of ``camera`` through ``spacetime``; if ``disk``
     is given, shade disk intersections with I_obs = g^3 * F_PageThorne
-    (eq. 19 of arXiv:2202.00086). The disk model is Kerr-only."""
+    (eq. 19 of arXiv:2202.00086). The disk model is Kerr-only.
+
+    ``constraint_monitor=False`` skips the per-step Hamiltonian
+    constraint evaluation (~10% faster; purely diagnostic — it never
+    feeds back into the integration). ``Image.herr`` is then all zeros.
+    """
     if disk is not None and spacetime.mid != MID_KERR:
         raise ValueError("the thin-disk model (Page-Thorne, ISCO, redshift) "
                          "is defined for Kerr only; render this spacetime "
@@ -69,7 +74,8 @@ def render(spacetime: Spacetime, camera: Camera, disk: ThinDisk | None = None,
         spacetime.mid, spacetime.par, camera.r, np.deg2rad(camera.theta),
         np.deg2rad(camera.phi), -camera.x[1], -camera.x[0],
         camera.y[0], camera.y[1], nx, ny, _method_id(method), rtol, atol,
-        disk_on, rin, rout, l0, max_steps)
+        disk_on, rin, rout, l0, max_steps,
+        errmon=1 if constraint_monitor else 0)
     intens, gmap, rhit, status, herrm, thf, phf = (np.flip(m, axis=0)
                                                   for m in out)
 

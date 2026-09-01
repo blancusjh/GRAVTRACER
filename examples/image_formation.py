@@ -1,20 +1,19 @@
-"""Image formation through a Kerr spacetime.
+"""Forward image projection through a Kerr spacetime (collimated mode).
 
-A test image is placed on a source plane behind the black hole; every
-sampled pixel emits one collimated ray perpendicular to the plane
-(default emission model). Rays are traced through the spacetime until
-they strike the Screen, where the formed image accumulates.
+A source image emits one ray per pixel, perpendicular to its plane (a
+"projector"); rays are traced through the spacetime and accumulate on a
+Screen. Central rays are captured, near-critical rays cross the optical
+axis and form the caustic star. For photographing a lambertian source
+with a camera, see examples/photograph.py.
 
 Usage: python examples/image_formation.py [--image PATH] [--spin A]
 """
 import argparse
-import sys
 import time
-from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
+from _common import out
 
 import matplotlib
 matplotlib.use("Agg")
@@ -27,10 +26,10 @@ def test_pattern(n=512):
     """Colored quadrants + grid + circle: enough structure to see the
     lensing distortion clearly."""
     img = np.zeros((n, n, 3))
-    img[:n//2, :n//2] = (0.85, 0.15, 0.15)   # top-left red
-    img[:n//2, n//2:] = (0.15, 0.6, 0.2)     # top-right green
-    img[n//2:, :n//2] = (0.15, 0.3, 0.8)     # bottom-left blue
-    img[n//2:, n//2:] = (0.95, 0.85, 0.2)    # bottom-right yellow
+    img[:n//2, :n//2] = (0.85, 0.15, 0.15)
+    img[:n//2, n//2:] = (0.15, 0.6, 0.2)
+    img[n//2:, :n//2] = (0.15, 0.3, 0.8)
+    img[n//2:, n//2:] = (0.95, 0.85, 0.2)
     ii, jj = np.mgrid[0:n, 0:n]
     grid = (ii % (n//8) < 2) | (jj % (n//8) < 2)
     img[grid] = 1.0
@@ -45,8 +44,7 @@ def main():
                     help="path to an image to propagate (default: pattern)")
     ap.add_argument("--spin", type=float, default=0.9)
     ap.add_argument("--rays", type=int, default=300_000)
-    ap.add_argument("-o", "--output",
-                    default="examples/image_formation.png")
+    ap.add_argument("-o", "--output", default=out("image_formation.png"))
     args = ap.parse_args()
 
     img_arr = args.image if args.image else test_pattern()
@@ -55,7 +53,8 @@ def main():
     source = grayt.ImageSource(center=(-60.0, 0.0, 0.0),
                                normal=(1.0, 0.0, 0.0),
                                up=(0.0, 0.0, 1.0),
-                               width=40.0, height=40.0, image=img_arr)
+                               width=40.0, height=40.0, image=img_arr,
+                               emission="collimated")
     screen = grayt.Screen(center=(60.0, 0.0, 0.0),
                           normal=(1.0, 0.0, 0.0),
                           up=(0.0, 0.0, 1.0),
@@ -72,8 +71,7 @@ def main():
 
     fig = plt.figure(figsize=(15, 5))
     ax1 = fig.add_subplot(1, 3, 1)
-    ax1.imshow(source.image if not isinstance(source.image, str)
-               else test_pattern())
+    ax1.imshow(source.image)
     ax1.set_title("source image"); ax1.axis("off")
     ax2 = fig.add_subplot(1, 3, 2)
     ax2.imshow(screen.image)

@@ -1,15 +1,12 @@
-"""Counterpart of Fig. 8 of arXiv:2202.00086: wall-clock time vs image
-resolution for the three integrators (shadow scene, a = 0.98, r0 = 1000,
-image plane [-8, 8]^2 — the same setup as their timing figure).
+"""Wall-clock render time versus resolution for the three integrators
+(the timing analysis of Fig. 8 of arXiv:2202.00086).
 
-Usage: python validation/fig8_benchmark.py [--sizes 64 128 256 512]
+Usage: python examples/benchmark.py [--sizes 64 128 256 512]
 """
 import argparse
-import sys
 import time
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
+from _common import out
 
 import matplotlib
 matplotlib.use("Agg")
@@ -24,10 +21,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sizes", type=int, nargs="+",
                     default=[64, 128, 256, 512])
-    ap.add_argument("-o", "--output", default="validation/fig8_benchmark.png")
+    ap.add_argument("-a", "--spin", type=float, default=0.98)
+    ap.add_argument("-o", "--output", default=out("benchmark.png"))
     args = ap.parse_args()
 
-    bh = grayt.BlackHole(a=0.98)
+    bh = grayt.BlackHole(a=args.spin)
     fig, ax = plt.subplots(figsize=(6, 4), constrained_layout=True)
     for method in METHODS:
         times = []

@@ -70,7 +70,8 @@ class TestScreen:
         src_img = np.ones((8, 8, 3))
         source = grayt.ImageSource(center=(-100.0, 600.0, 0.0),
                                    normal=(1, 0, 0), up=(0, 0, 1),
-                                   width=10.0, height=10.0, image=src_img)
+                                   width=10.0, height=10.0, image=src_img,
+                                   emission="collimated")
         screen = grayt.Screen(center=(100.0, 600.0, 0.0), normal=(1, 0, 0),
                               up=(0, 0, 1), width=12.0, height=12.0,
                               resolution=(6, 6))

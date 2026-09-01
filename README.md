@@ -37,6 +37,24 @@ Other entry points: `grayt.shadow(bh, cam)`, `grayt.trace(...)` for single
 geodesics with constraint monitoring, `grayt.flux_profile(bh)` for the
 Page–Thorne emission profile, `grayt.Scene.from_yaml("configs/fig13_a0.yml")`.
 
+Scene layer (`grayt.system`): `PhysicalSystem` (spacetime + objects +
+rays) and `System` (physics + cameras + screens + 3D visualization).
+Image formation with a loaded picture:
+
+```python
+src = grayt.ImageSource(center=(-150, 0, 0), normal=(1, 0, 0),
+                        width=90, height=68, image="picture.jpg")  # lambertian
+sys3 = grayt.System(physical=grayt.PhysicalSystem(black_hole=bh,
+                                                  sources=[src]))
+photo = sys3.photograph(grayt.Camera(x=(-45, 45), y=(-28, 28),
+                                     resolution=(900, 560)), src)
+photo.plot()
+```
+
+Emission models: `"lambertian"` (default — photographed by backward
+tracing) and `"collimated"` (forward projection onto a `grayt.Screen`
+via `System.form_image`).
+
 CLI:
 
 ```sh
@@ -53,10 +71,23 @@ PYTHONPATH=python python3 -m grayt shadow -a 0.98 -o shadow.png
 | Constraint drift, Figs. 4–5 orbits (rtol 1e-11) | RKDP45 ~1e-10 (best), CK/F45 ~1e-9 |
 | Shadow vs analytic Bardeen rim, a = 0.98 (Fig. 6) | within 1 pixel |
 | Page–Thorne flux, a = 0 | F(isco) = 0, peak at r = 9.55 |
-| Thin-disk images (Fig. 13) | `validation/fig13_disk.py` |
+| Thin-disk images (Fig. 13) | `examples/disk_images.py` |
+| Weak-field deflection (b = 50) | 4M/b + 15πM²/4b² to < 2% |
 
-Run: `python3 validation/fig4_5_constraint.py`, `validation/fig6_shadow.py`,
-`validation/fig13_disk.py --res 2048 1024`.
+The example scripts are general-purpose (spin, resolution, geometry as
+CLI flags); their *defaults* reproduce the paper's figures. All outputs
+go to `output/` (git-ignored), keeping code and artifacts separate.
+
+| Script | Defaults reproduce |
+|---|---|
+| `examples/rays3d.py` | Fig. 1 (3D geodesics) |
+| `examples/constraint_drift.py` | Figs. 4–5 |
+| `examples/shadow.py` | Fig. 6 |
+| `examples/benchmark.py` | Fig. 8 |
+| `examples/lensing_sphere.py` | Fig. 12 |
+| `examples/disk_images.py` | Fig. 13 (`--res 2048 1024`) |
+| `examples/image_formation.py` | forward (collimated) projection demo |
+| `examples/photograph.py` | lambertian imaging of a loaded picture |
 
 ### Errata found in the paper (as printed)
 
@@ -78,4 +109,6 @@ Documented where implemented in the code:
 - [x] M2 camera & shadow vs Bardeen (Fig. 6)
 - [x] M3 celestial-sphere lensing (Fig. 12)
 - [x] M4 thin accretion disk (Fig. 13)
-- [ ] M5 q-metric, time-like geodesics (benchmark script: validation/fig8_benchmark.py)
+- [x] Scene layer: 3D viewer, image formation (`photograph`/`form_image`),
+      `Screen`/`ImageSource`/`PhysicalSystem`/`System`
+- [ ] M5 q-metric, time-like geodesics

@@ -16,10 +16,18 @@ only asymptotically, so sources and screens should sit far from the hole
 
 Image formation: an ``ImageSource`` holds a loaded image; each pixel
 knows only color/illumination, not direction. In general pixel k could
-emit n_k rays distributed over (theta, phi); the default emission model
-is ``"collimated"`` — one ray per sampled pixel, perpendicular to the
-image plane — which keeps the cost linear in pixels. The architecture
-leaves room for angular emission models later.
+emit n_k rays distributed over (theta, phi). Two concrete models:
+
+- ``"lambertian"`` (default): pixels emit isotropically, color
+  independent of direction. Imaged with *backward* ray tracing
+  (``System.photograph``): one ray per camera pixel, sample the texture
+  wherever the ray lands — full angular generality at no extra cost.
+- ``"collimated"``: one *forward* ray per pixel along the surface
+  normal, projected onto a ``Screen``
+  (``System.form_image``) — a projector, useful for intuition.
+
+A general n_k(theta, phi) model slots in as a per-hit weight in the
+backward mode without changing any caller.
 """
 from __future__ import annotations
 
@@ -141,13 +149,12 @@ class ImageSource(PlanarSurface):
     """A loaded image placed on a plane; the source of rays.
 
     ``image`` is an (H, W, 3) float array in [0, 1] or a path to load.
-    ``emission="collimated"``: every sampled pixel emits one ray along
-    the surface normal (the direction-agnostic default; angular emission
-    models n_k(theta, phi) can be added later without changing callers).
+    ``emission``: ``"lambertian"`` (default, for backward photography) or
+    ``"collimated"`` (forward projection onto a Screen).
     """
 
     image: object = None
-    emission: str = "collimated"
+    emission: str = "lambertian"
 
     def __post_init__(self):
         super().__post_init__()
@@ -156,12 +163,27 @@ class ImageSource(PlanarSurface):
             arr = mpimg.imread(self.image)
             if arr.dtype.kind in "ui":
                 arr = arr/255.0
+            if arr.ndim == 2:
+                arr = np.repeat(arr[..., None], 3, axis=-1)
             self.image = np.asarray(arr[..., :3], float)
         elif self.image is None:
             raise ValueError("ImageSource requires an image array or path")
-        if self.emission != "collimated":
+        if self.emission not in ("lambertian", "collimated"):
             raise NotImplementedError(
-                "only the collimated emission model is implemented")
+                f"unknown emission model {self.emission!r}")
+
+    def sample_color(self, u, v, background=0.0):
+        """Texture lookup at in-plane coordinates (u, v); points off the
+        card return the background color. Rows map top-down to +e2."""
+        u = np.atleast_1d(u)
+        v = np.atleast_1d(v)
+        h, w = self.image.shape[:2]
+        jj = np.floor((u/self.width + 0.5)*w).astype(int)
+        ii = np.floor((0.5 - v/self.height)*h).astype(int)
+        ok = (ii >= 0) & (ii < h) & (jj >= 0) & (jj < w)
+        out = np.full((len(u), 3), background, dtype=float)
+        out[ok] = self.image[ii[ok], jj[ok]]
+        return out, ok
 
     def sample_rays(self, max_rays=40_000):
         """Subsample pixels -> (positions (N,3), colors (N,3), uv).
@@ -274,6 +296,10 @@ class PhysicalSystem:
 
         Returns a dict with per-ray status counts.
         """
+        if source.emission != "collimated":
+            raise ValueError(
+                "forward projection needs emission='collimated'; for a "
+                "lambertian source use System.photograph instead")
         pos, colors, _ = source.sample_rays(max_rays=max_rays)
         n_ray = len(pos)
         y0s = np.empty((n_ray, 6))
@@ -306,6 +332,30 @@ class PhysicalSystem:
                 "n_on_screen": n_binned}
 
 
+@dataclass
+class Photograph:
+    """Result of Lambertian backward imaging: an RGB picture plus the
+    per-pixel ray status, oriented like ``api.Image`` ((nx, ny) first)."""
+
+    rgb: np.ndarray               # (nx, ny, 3)
+    status: np.ndarray            # (nx, ny)
+    extent: tuple
+
+    def plot(self, ax=None, label=None):
+        import matplotlib.pyplot as plt
+        if ax is None:
+            _, ax = plt.subplots(figsize=(9, 6))
+        ax.imshow(np.clip(self.rgb, 0, 1).transpose(1, 0, 2)[::-1],
+                  origin="upper", extent=self.extent, aspect="equal",
+                  interpolation="bilinear")
+        if label:
+            ax.text(0.04, 0.08, label, transform=ax.transAxes,
+                    fontsize=12, color="black",
+                    bbox=dict(facecolor="white", alpha=0.9,
+                              boxstyle="round,pad=0.3"))
+        return ax
+
+
 # ----------------------------------------------------------------- system
 
 @dataclass
@@ -331,6 +381,69 @@ class System:
                if isinstance(source, int) else source)
         scr = self.screens[screen] if isinstance(screen, int) else screen
         return self.physical.propagate_to_screen(src, scr, **kwargs)
+
+    def photograph(self, camera: Camera, source: ImageSource | int = 0,
+                   background=0.0, max_steps=200_000) -> Photograph:
+        """Photograph a lambertian ``ImageSource`` through the spacetime.
+
+        Backward ray tracing: one ray per camera pixel, integrated toward
+        the source plane; where it lands on the card, the texture color is
+        sampled (direction-independent emission). Captured or escaped
+        rays show ``background``.
+
+        Approximation: the ray terminates at its first crossing of the
+        *infinite* source plane, even off the card — rays that would
+        re-cross the card after passing its edge are not followed.
+        """
+        ps = self.physical
+        src = ps.sources[source] if isinstance(source, int) else source
+        if src.emission != "lambertian":
+            raise ValueError("photograph needs emission='lambertian'")
+
+        bh = ps.black_hole
+        nx, ny = camera.resolution
+        r0 = camera.r
+        th0 = np.deg2rad(camera.theta)
+        ph0 = np.deg2rad(camera.phi)
+
+        # Vectorized camera initial conditions (eq. 11, corrected sign;
+        # xf = -x_screen implements the paper's screen orientation).
+        xs = (np.linspace(camera.x[0], camera.x[1], nx, endpoint=False) +
+              0.5*(camera.x[1] - camera.x[0])/nx)
+        ys = (np.linspace(camera.y[0], camera.y[1], ny, endpoint=False) +
+              0.5*(camera.y[1] - camera.y[0])/ny)
+        XF, YY = np.meshgrid(-xs, ys, indexing="ij")
+        XF, YY = XF.ravel(), YY.ravel()
+        gd = _core.kerr_metric.metric_cov(bh.a, r0, th0)
+        at = np.sqrt(gd[4]/(gd[1]*gd[1] - gd[0]*gd[4]))
+        pts_ = 1.0/at - XF*gd[1]/(r0*np.sqrt(gd[4]))
+        pph_ = -XF*np.sqrt(gd[4])/r0
+        pth = YY*np.sqrt(gd[3])/r0
+        pr = np.sqrt(gd[2]*np.clip(1.0 - (XF/r0)**2 - (YY/r0)**2, 0, None))
+        n_ray = nx*ny
+        y0s = np.zeros((n_ray, 6))
+        y0s[:, 1] = r0
+        y0s[:, 2] = th0
+        y0s[:, 3] = ph0
+        y0s[:, 4] = pr
+        y0s[:, 5] = pth
+
+        nhat, d = src.plane
+        r_max = 1.2*max(r0, float(np.linalg.norm(src._c)))
+        status, youts = _core.raytracer.trace_bundle_to_plane(
+            bh.a, pts_, pph_, y0s, _METHODS[ps.method], ps.rtol, ps.atol,
+            -1.0, nhat, d, r_max, max_steps)
+
+        rgb = np.full((n_ray, 3), background, dtype=float)
+        hit = status == STATUS_SCREEN
+        if hit.any():
+            pts3 = bl_to_cart(youts[hit, 1], youts[hit, 2], youts[hit, 3])
+            u, v = src.to_local(pts3)
+            rgb[hit], _ = src.sample_color(u, v, background=background)
+
+        return Photograph(rgb=rgb.reshape(nx, ny, 3),
+                          status=status.reshape(nx, ny),
+                          extent=camera.extent)
 
     def visualize3d(self, ax=None, show_rays=True, max_rays=200,
                     show_surfaces=True, elev=18.0, azim=-60.0):

@@ -60,15 +60,17 @@ class TestGeodesics:
         cam = grayt.Camera()
         # Escaping ray: constraint must stay tiny along the whole path.
         y0, pt, pphi = grayt.camera_ray(bh, cam, 15.0, 6.0)
-        st, _, hmax, _ = RT.trace_ray(bh.a, pt, pphi, y0, 1, 1e-10,
-                                      1e-12, 1100.0, 0, 6.0, 20.0, 500000)
+        st, _, hmax, _ = RT.trace_ray(bh.mid, bh.par, pt, pphi, y0, 1,
+                                      1e-10, 1e-12, 1100.0, 0, 6.0, 20.0,
+                                      500000)
         assert st == grayt.STATUS_ESCAPED
         assert hmax < 1e-9
         # Captured ray: error grows in the final near-horizon plunge
         # (coordinate degeneracy, cf. Fig. 5 of the paper) but stays bounded.
         y0, pt, pphi = grayt.camera_ray(bh, cam, 5.0, 3.0)
-        st, _, hmax, _ = RT.trace_ray(bh.a, pt, pphi, y0, 1, 1e-10,
-                                      1e-12, 1100.0, 0, 6.0, 20.0, 500000)
+        st, _, hmax, _ = RT.trace_ray(bh.mid, bh.par, pt, pphi, y0, 1,
+                                      1e-10, 1e-12, 1100.0, 0, 6.0, 20.0,
+                                      500000)
         assert st == grayt.STATUS_CAPTURED
         assert hmax < 1e-6
 

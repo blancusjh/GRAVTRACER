@@ -1,0 +1,25 @@
+[build-system]
+build-backend = "mesonpy"
+requires = ["meson-python>=0.15", "numpy>=1.26"]
+
+[project]
+name = "gravtracer"
+version = "0.2.0"
+description = "Relativistic ray tracing around compact objects (Kerr, q-metric): shadows, thin disks, lensing, image formation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "GRAVTRACER developers" }]
+keywords = ["general-relativity", "ray-tracing", "black-holes",
+            "accretion-disks", "gravitational-lensing"]
+dependencies = [
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+gravtracer = "grayt.cli:main"

@@ -1,26 +1,29 @@
-"""High-level API for the Kerr ray tracer.
+"""Functional facade over the Fortran core.
 
-Design: the user composes three ingredients and renders.
+The one-shot workflow composes a spacetime, a camera, and optionally
+matter, then renders:
 
     >>> import grayt
-    >>> bh = grayt.BlackHole(a=0.95)
-    >>> cam = grayt.Camera(r=1000, theta=85, x=(-24, 24), y=(-12, 12),
-    ...                    resolution=(1024, 512))
-    >>> disk = grayt.ThinDisk(l0=1.8, r_out=20)
-    >>> img = grayt.render(bh, cam, disk)
+    >>> img = grayt.render(grayt.BlackHole(a=0.95),
+    ...                    grayt.Camera(resolution=(1024, 512)),
+    ...                    grayt.ThinDisk(l0=1.8))
     >>> img.plot()
 
-`Camera` is the source of rays (backward ray tracing: rays are launched
-from the observer's image plane); `ThinDisk` is the matter geometry.
+For multi-instrument setups (screens, photographs, 3D scenes) use
+``grayt.System`` (see grayt.system).
 """
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass, field
+import warnings
 
 import numpy as np
 
 from . import _core
+from .spacetime import Spacetime, BlackHole, QMetric, MID_KERR
+from .instruments import Camera
+from .matter import ThinDisk
+from .results import Image, Trajectory
 
 _METHODS = {"rkdp45": 1, "rkck45": 2, "rkf45": 3}
 
@@ -30,118 +33,30 @@ STATUS_DISK = 2
 STATUS_FAILED = 3
 
 
-@dataclass(frozen=True)
-class BlackHole:
-    """Kerr black hole with dimensionless spin ``a`` (geometrized M = 1)."""
-
-    a: float = 0.0
-
-    def __post_init__(self):
-        if not -1.0 <= self.a <= 1.0:
-            raise ValueError(f"spin must satisfy |a| <= 1, got {self.a}")
-
-    @property
-    def horizon(self) -> float:
-        """Outer event horizon radius r_H = 1 + sqrt(1 - a^2)."""
-        return float(_core.raytracer.get_horizon(self.a))
-
-    @property
-    def isco(self) -> float:
-        """Prograde innermost stable circular orbit radius."""
-        return float(_core.raytracer.get_isco(self.a))
+def _method_id(name: str) -> int:
+    try:
+        return _METHODS[name]
+    except KeyError:
+        raise ValueError(f"unknown integrator {name!r}; valid methods: "
+                         f"{', '.join(sorted(_METHODS))}") from None
 
 
-@dataclass(frozen=True)
-class Camera:
-    """Observer image plane: the source of (backward-traced) rays.
-
-    Parameters
-    ----------
-    r, theta, phi : observer position in Boyer-Lindquist coordinates
-        (theta in degrees).
-    x, y : image-plane extents in units of M (paper convention: the
-        Doppler-approaching side of a prograde disk appears at x < 0).
-    resolution : (nx, ny) pixels.
-    """
-
-    r: float = 1000.0
-    theta: float = 85.0
-    phi: float = 0.0
-    x: tuple[float, float] = (-24.0, 24.0)
-    y: tuple[float, float] = (-12.0, 12.0)
-    resolution: tuple[int, int] = (512, 256)
-
-    @property
-    def extent(self) -> tuple[float, float, float, float]:
-        return (self.x[0], self.x[1], self.y[0], self.y[1])
-
-
-@dataclass(frozen=True)
-class ThinDisk:
-    """Equatorial thin accretion disk (matter geometry).
-
-    Emission follows the Page & Thorne (1974) time-averaged flux; matter
-    moves on circular orbits with constant specific angular momentum
-    ``l0``. ``r_in=None`` means the ISCO of the chosen black hole.
-    """
-
-    r_in: float | None = None
-    r_out: float = 20.0
-    l0: float = 2.8
-    model: str = "page-thorne"
-
-    def __post_init__(self):
-        if self.model != "page-thorne":
-            raise ValueError(f"unknown disk model: {self.model!r}")
-
-
-@dataclass
-class Image:
-    """Result of a render: per-pixel maps, oriented as (nx, ny) arrays.
-
-    All maps are indexed [i, j] with i along x and j along y; ``extent``
-    gives (xmin, xmax, ymin, ymax) for plotting.
-    """
-
-    intensity: np.ndarray
-    g: np.ndarray
-    r_hit: np.ndarray
-    status: np.ndarray
-    herr: np.ndarray
-    theta_inf: np.ndarray
-    phi_inf: np.ndarray
-    extent: tuple[float, float, float, float]
-    meta: dict = field(default_factory=dict)
-
-    def plot(self, ax=None, cmap="afmhot", norm_to=None, colorbar=True,
-             label=None, vmax=None):
-        from .plotting import plot_image
-        return plot_image(self, ax=ax, cmap=cmap, norm_to=norm_to,
-                          colorbar=colorbar, label=label, vmax=vmax)
-
-    def save(self, path):
-        """Save all maps + metadata to a compressed .npz archive."""
-        np.savez_compressed(
-            path, intensity=self.intensity, g=self.g, r_hit=self.r_hit,
-            status=self.status, herr=self.herr, theta_inf=self.theta_inf,
-            phi_inf=self.phi_inf, extent=np.array(self.extent),
-            meta=np.array(repr(self.meta)))
-
-    @classmethod
-    def load(cls, path):
-        d = np.load(path, allow_pickle=False)
-        return cls(intensity=d["intensity"], g=d["g"], r_hit=d["r_hit"],
-                   status=d["status"], herr=d["herr"],
-                   theta_inf=d["theta_inf"], phi_inf=d["phi_inf"],
-                   extent=tuple(d["extent"]), meta={"loaded": str(path)})
-
-
-def render(black_hole: BlackHole, camera: Camera, disk: ThinDisk | None = None,
+def render(spacetime: Spacetime, camera: Camera, disk: ThinDisk | None = None,
            method: str = "rkdp45", rtol: float = 1e-8, atol: float = 1e-10,
            max_steps: int = 500_000) -> Image:
-    """Trace every pixel of ``camera`` through the spacetime of
-    ``black_hole``; if ``disk`` is given, shade disk intersections with
-    I_obs = g^3 * F_PageThorne (eq. 19 of arXiv:2202.00086)."""
+    """Trace every pixel of ``camera`` through ``spacetime``; if ``disk``
+    is given, shade disk intersections with I_obs = g^3 * F_PageThorne
+    (eq. 19 of arXiv:2202.00086). The disk model is Kerr-only."""
+    if disk is not None and spacetime.mid != MID_KERR:
+        raise ValueError("the thin-disk model (Page-Thorne, ISCO, redshift) "
+                         "is defined for Kerr only; render this spacetime "
+                         "without a disk")
+    if disk is not None and isinstance(spacetime, BlackHole):
+        if disk.r_out <= spacetime.isco:
+            warnings.warn(
+                f"disk r_out = {disk.r_out} lies inside the ISCO "
+                f"({spacetime.isco:.3f}); the disk is empty", stacklevel=2)
+
     nx, ny = camera.resolution
     disk_on = 1 if disk is not None else 0
     rin = -1.0 if (disk is None or disk.r_in is None) else disk.r_in
@@ -151,13 +66,14 @@ def render(black_hole: BlackHole, camera: Camera, disk: ThinDisk | None = None,
     # The Fortran camera x-axis is mirrored w.r.t. the paper's figures;
     # render with x negated so that screen-x follows the paper convention.
     out = _core.raytracer.render_image(
-        black_hole.a, camera.r, np.deg2rad(camera.theta),
+        spacetime.mid, spacetime.par, camera.r, np.deg2rad(camera.theta),
         np.deg2rad(camera.phi), -camera.x[1], -camera.x[0],
-        camera.y[0], camera.y[1], nx, ny, _METHODS[method], rtol, atol,
+        camera.y[0], camera.y[1], nx, ny, _method_id(method), rtol, atol,
         disk_on, rin, rout, l0, max_steps)
-    intens, gmap, rhit, status, herrm, thf, phf = (np.flip(m, axis=0) for m in out)
+    intens, gmap, rhit, status, herrm, thf, phf = (np.flip(m, axis=0)
+                                                  for m in out)
 
-    meta = {"black_hole": dataclasses.asdict(black_hole),
+    meta = {"spacetime": dataclasses.asdict(spacetime),
             "camera": dataclasses.asdict(camera),
             "disk": dataclasses.asdict(disk) if disk else None,
             "method": method, "rtol": rtol, "atol": atol}
@@ -166,48 +82,49 @@ def render(black_hole: BlackHole, camera: Camera, disk: ThinDisk | None = None,
                  theta_inf=thf, phi_inf=phf, extent=camera.extent, meta=meta)
 
 
-def shadow(black_hole: BlackHole, camera: Camera, **kwargs) -> Image:
+def shadow(spacetime: Spacetime, camera: Camera, **kwargs) -> Image:
     """Render without a disk; ``status == STATUS_CAPTURED`` is the shadow."""
-    return render(black_hole, camera, disk=None, **kwargs)
+    return render(spacetime, camera, disk=None, **kwargs)
 
 
-def trace(black_hole: BlackHole, y0, p_t: float, p_phi: float,
+def trace(spacetime: Spacetime, y0, p_t: float, p_phi: float,
           method: str = "rkdp45", rtol: float = 1e-10, atol: float = 1e-12,
-          h0: float = 1.0, lambda_max: float = 1e4, n_max: int = 100_000):
-    """Integrate a single geodesic from raw initial conditions.
-
-    ``y0 = (t, r, theta, phi, p_r, p_theta)``; returns a dict with the
-    trajectory columns and the Hamiltonian constraint error per step.
-    """
+          h0: float = 1.0, lambda_max: float = 1e4,
+          n_max: int = 100_000) -> Trajectory:
+    """Integrate a single geodesic (photon or massive particle) from raw
+    initial conditions ``y0 = (t, r, theta, phi, p_r, p_theta)``
+    (angles in RADIANS here — raw phase-space coordinates)."""
     traj, herr, nout = _core.raytracer.trace_geodesic(
-        black_hole.a, np.asarray(y0, dtype=float), p_t, p_phi,
-        _METHODS[method], rtol, atol, h0, lambda_max, n_max)
+        spacetime.mid, spacetime.par, np.asarray(y0, dtype=float), p_t,
+        p_phi, _method_id(method), rtol, atol, h0, lambda_max, n_max)
     t = traj[:nout]
-    return {"lambda": t[:, 0], "t": t[:, 1], "r": t[:, 2],
-            "theta": t[:, 3], "phi": t[:, 4], "p_r": t[:, 5],
-            "p_theta": t[:, 6], "herr": herr[:nout]}
+    return Trajectory(lam=t[:, 0], t=t[:, 1], r=t[:, 2], theta=t[:, 3],
+                      phi=t[:, 4], p_r=t[:, 5], p_theta=t[:, 6],
+                      herr=herr[:nout],
+                      meta={"spacetime": dataclasses.asdict(spacetime),
+                            "p_t": p_t, "p_phi": p_phi, "method": method})
 
 
-def camera_ray(black_hole: BlackHole, camera: Camera, x: float, y: float):
+def camera_ray(spacetime: Spacetime, camera: Camera, x: float, y: float):
     """Initial conditions (y0, p_t, p_phi) for one image-plane point."""
     y0, pt, pphi = _core.raytracer.camera_init(
-        black_hole.a, camera.r, np.deg2rad(camera.theta),
+        spacetime.mid, spacetime.par, camera.r, np.deg2rad(camera.theta),
         np.deg2rad(camera.phi), -x, y)
     return y0, float(pt), float(pphi)
 
 
-def orbit_ic(black_hole: BlackHole, r0: float, energy: float,
+def orbit_ic(spacetime: Spacetime, r0: float, energy: float,
              angular_momentum: float, mass: float = 1.0,
              theta0: float = 90.0, pr_sign: int = 0):
     """Initial conditions for a geodesic with conserved E and L.
 
     ``mass=1`` gives a time-like orbit (H = -1/2), ``mass=0`` a photon.
-    ``pr_sign``: sign of the initial radial momentum (0 = turning point).
-    Returns ``(y0, p_t, p_phi)`` for ``grayt.trace``.
+    ``theta0`` in degrees. ``pr_sign``: sign of the initial radial
+    momentum (0 = turning point). Returns ``(y0, p_t, p_phi)``.
     """
     th = np.deg2rad(theta0)
     p_t, p_phi = -energy, angular_momentum
-    gu, _, _ = _core.kerr_metric.metric_contra(black_hole.a, r0, th)
+    gu, _, _ = spacetime.metric_contra(r0, th)
     pr2 = (-mass**2 - (gu[0]*p_t**2 + 2*gu[1]*p_t*p_phi +
                        gu[4]*p_phi**2))/gu[2]
     if pr2 < -1e-12:
@@ -217,6 +134,8 @@ def orbit_ic(black_hole: BlackHole, r0: float, energy: float,
 
 
 def flux_profile(black_hole: BlackHole, r_out: float = 20.0, n: int = 2000):
-    """Radial Page-Thorne flux profile on [r_isco, r_out]."""
+    """Radial Page-Thorne flux profile on [r_isco, r_out] (Kerr only)."""
+    if black_hole.mid != MID_KERR:
+        raise ValueError("the Page-Thorne flux is defined for Kerr only")
     rs, fs = _core.disk_model.flux_profile(black_hole.a, r_out, n)
     return rs, fs

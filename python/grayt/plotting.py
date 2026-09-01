@@ -72,7 +72,7 @@ def plot_orbits_2d(orbits, black_hole=None, plane="xy", ax=None,
         if isinstance(entry, tuple):
             orbit, label = entry
         if isinstance(orbit, dict):
-            from .system import bl_to_cart
+            from .geometry import bl_to_cart
             pts = bl_to_cart(orbit["r"], orbit["theta"], orbit["phi"])
         elif hasattr(orbit, "points"):
             pts = orbit.points

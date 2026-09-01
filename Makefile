@@ -1,7 +1,8 @@
 PYTHON ?= python3
 F2PY = $(PYTHON) -m numpy.f2py
-SRCS = src/kind_params.f90 src/kerr_metric.f90 src/geodesic_eom.f90 \
-       src/rk_integrators.f90 src/disk_model.f90 src/raytracer.f90
+SRCS = src/kind_params.f90 src/kerr_metric.f90 src/q_metric.f90 \
+       src/spacetime.f90 src/geodesic_eom.f90 src/rk_integrators.f90 \
+       src/disk_model.f90 src/raytracer.f90
 
 .PHONY: all core test clean
 

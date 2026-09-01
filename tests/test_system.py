@@ -21,9 +21,10 @@ class TestNullMomentum:
 
     def test_weak_field_deflection(self):
         # alpha ~ 4M/b + 15 pi M^2 / (4 b^2) for b = 50 -> 0.0847 rad
-        ps = grayt.PhysicalSystem(black_hole=grayt.BlackHole(0.0))
-        ray = ps.trace_ray((-1000.0, 50.0, 0.0), (1.0, 0.0, 0.0),
-                           lambda_max=2500.0)
+        sys3 = grayt.System(
+            physical=grayt.PhysicalSystem(spacetime=grayt.BlackHole(0.0)))
+        ray = sys3.trace_ray((-1000.0, 50.0, 0.0), (1.0, 0.0, 0.0),
+                             lambda_max=2500.0)
         d1 = ray.points[-1] - ray.points[-2]
         d1 = d1/np.linalg.norm(d1)
         alpha = np.arccos(np.clip(d1 @ np.array([1.0, 0, 0]), -1, 1))
@@ -37,7 +38,7 @@ class TestPlaneTracing:
         y0, pt, pphi = grayt.null_momentum(bh, (-400.0, 200.0, -30.0),
                                            (1.0, 0.0, 0.0))
         st, yout, ns = _core.raytracer.trace_to_plane(
-            bh.a, pt, pphi, y0, 1, 1e-9, 1e-11, 1.0,
+            bh.mid, bh.par, pt, pphi, y0, 1, 1e-9, 1e-11, 1.0,
             [1.0, 0.0, 0.0], 400.0, 5000.0, 100000)
         assert st == STATUS_SCREEN
         hit = grayt.bl_to_cart(yout[1], yout[2], yout[3])
@@ -48,7 +49,7 @@ class TestPlaneTracing:
         y0, pt, pphi = grayt.null_momentum(bh, (-200.0, 0.0, 0.0),
                                            (1.0, 0.0, 0.0))
         st, yout, ns = _core.raytracer.trace_to_plane(
-            bh.a, pt, pphi, y0, 1, 1e-9, 1e-11, 1.0,
+            bh.mid, bh.par, pt, pphi, y0, 1, 1e-9, 1e-11, 1.0,
             [1.0, 0.0, 0.0], 200.0, 2000.0, 100000)
         assert st == grayt.STATUS_CAPTURED
 
@@ -75,9 +76,8 @@ class TestScreen:
         screen = grayt.Screen(center=(100.0, 600.0, 0.0), normal=(1, 0, 0),
                               up=(0, 0, 1), width=12.0, height=12.0,
                               resolution=(6, 6))
-        ps = grayt.PhysicalSystem(black_hole=bh)
-        stats = ps.propagate_to_screen(source, screen, max_rays=64,
-                                       r_max=5000.0)
+        sys3 = grayt.System(physical=grayt.PhysicalSystem(spacetime=bh))
+        stats = sys3.form_image(source, screen, max_rays=64, r_max=5000.0)
         # deflection ~4/600 rad over 200M path -> ~1.3M shift; all rays
         # must reach the (slightly larger) screen
         assert stats["status_counts"].get(STATUS_SCREEN, 0) == stats["n_rays"]

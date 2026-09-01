@@ -27,20 +27,19 @@ def main():
     ap.add_argument("-o", "--output", default=out("rays3d.png"))
     args = ap.parse_args()
 
-    ps = grayt.PhysicalSystem(black_hole=grayt.BlackHole(a=args.spin))
+    sys3 = grayt.System(physical=grayt.PhysicalSystem(
+        spacetime=grayt.BlackHole(a=args.spin)))
     observer = np.asarray(args.observer)
 
     rng = np.random.default_rng(args.seed)
     target_dir = -observer/np.linalg.norm(observer)
     for _ in range(args.n_rays):
         d = target_dir + rng.normal(scale=0.16, size=3)
-        ps.trace_ray(observer, d, lambda_max=260.0)
+        sys3.trace_ray(observer, d, lambda_max=260.0)
 
-    n_cap = sum(r.status == grayt.STATUS_CAPTURED for r in ps.rays)
-    print(f"traced {len(ps.rays)} rays: {n_cap} captured, "
-          f"{len(ps.rays)-n_cap} escaped")
-
-    sys3 = grayt.System(physical=ps)
+    n_cap = sum(r.status == grayt.STATUS_CAPTURED for r in sys3.rays)
+    print(f"traced {len(sys3.rays)} rays: {n_cap} captured, "
+          f"{len(sys3.rays)-n_cap} escaped")
     ax = sys3.visualize3d(show_surfaces=False, elev=22, azim=-55)
     ax.scatter(*observer, s=90, color="tab:blue", edgecolor="black",
                zorder=5, label="observer")

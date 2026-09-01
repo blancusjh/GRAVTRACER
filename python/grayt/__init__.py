@@ -1,8 +1,10 @@
-"""grayt — backward ray tracing around Kerr black holes.
+"""grayt — GRAVTRACER: relativistic ray tracing around compact objects.
 
-Replication of OSIRIS (Velásquez-Cadavid et al., arXiv:2202.00086):
-Hamiltonian null geodesics integrated from the observer's image plane,
-with a Page-Thorne thin accretion disk.
+Replication and extension of OSIRIS (Velásquez-Cadavid et al.,
+arXiv:2202.00086): Hamiltonian null and time-like geodesics integrated
+in stationary axisymmetric spacetimes (Kerr, q-metric), with a
+Page-Thorne thin accretion disk, image formation, and 2D/3D orbit
+visualization.
 
 Quick start::
 
@@ -11,23 +13,31 @@ Quick start::
                        grayt.Camera(resolution=(1024, 512)),
                        grayt.ThinDisk(l0=1.8))
     img.plot()
+
+Ontology: ``Spacetime`` (BlackHole, QMetric) -> ``PhysicalSystem``
+(spacetime + matter) -> ``System`` (physics + instruments + experiments).
 """
-from .api import (BlackHole, Camera, ThinDisk, Image, render, shadow,
-                  trace, camera_ray, flux_profile, orbit_ic,
-                  STATUS_ESCAPED, STATUS_CAPTURED, STATUS_DISK,
-                  STATUS_FAILED)
-from .scene import Scene
-from .plotting import plot_orbits_2d
-from .system import (PhysicalSystem, System, Screen, ImageSource, Ray,
-                     Photograph, null_momentum, bl_to_cart)
+from .spacetime import Spacetime, BlackHole, QMetric
+from .geometry import PlanarSurface, bl_to_cart, cart_to_bl, null_momentum
+from .matter import ThinDisk, ImageSource
+from .instruments import Camera, Screen
+from .results import Image, Photograph, Ray, Trajectory
+from .api import (render, shadow, trace, camera_ray, orbit_ic,
+                  flux_profile, STATUS_ESCAPED, STATUS_CAPTURED,
+                  STATUS_DISK, STATUS_FAILED)
+from .system import PhysicalSystem, System
+from .plotting import (plot_orbits_2d, plot_image, plot_shadow,
+                       plot_lensing)
 
-__all__ = ["BlackHole", "Camera", "ThinDisk", "Image", "Scene", "render",
-           "shadow", "trace", "camera_ray", "flux_profile", "orbit_ic",
-           "plot_orbits_2d",
-           "PhysicalSystem", "System", "Screen", "ImageSource", "Ray",
-           "Photograph",
-           "null_momentum", "bl_to_cart",
-           "STATUS_ESCAPED", "STATUS_CAPTURED", "STATUS_DISK",
-           "STATUS_FAILED"]
+__all__ = [
+    "Spacetime", "BlackHole", "QMetric",
+    "PlanarSurface", "bl_to_cart", "cart_to_bl", "null_momentum",
+    "ThinDisk", "ImageSource", "Camera", "Screen",
+    "Image", "Photograph", "Ray", "Trajectory",
+    "render", "shadow", "trace", "camera_ray", "orbit_ic", "flux_profile",
+    "PhysicalSystem", "System",
+    "plot_orbits_2d", "plot_image", "plot_shadow", "plot_lensing",
+    "STATUS_ESCAPED", "STATUS_CAPTURED", "STATUS_DISK", "STATUS_FAILED",
+]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

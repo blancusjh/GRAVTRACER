@@ -60,9 +60,9 @@ def main():
                           up=(0.0, 0.0, 1.0),
                           width=40.0, height=40.0, resolution=(256, 256))
 
-    ps = grayt.PhysicalSystem(black_hole=bh, rtol=1e-9, atol=1e-11)
-    ps.sources.append(source)
-    sys3 = grayt.System(physical=ps, screens=[screen])
+    ps = grayt.PhysicalSystem(spacetime=bh, sources=[source])
+    sys3 = grayt.System(physical=ps, screens=[screen],
+                        rtol=1e-9, atol=1e-11)
 
     t0 = time.time()
     stats = sys3.form_image(0, 0, max_rays=args.rays, keep_sample_rays=40)

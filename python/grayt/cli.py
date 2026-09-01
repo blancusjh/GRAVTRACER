@@ -7,8 +7,20 @@ import time
 
 
 def main(argv=None):
+    try:
+        return _main(argv)
+    except (ValueError, FileNotFoundError, KeyError, TypeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+def _main(argv=None):
     parser = argparse.ArgumentParser(
-        prog="grayt", description="Backward ray tracing around Kerr black holes")
+        prog="gravtracer",
+        description="GRAVTRACER: relativistic ray tracing around compact objects")
+    from . import __version__
+    parser.add_argument("--version", action="version",
+                        version=f"gravtracer {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_render = sub.add_parser("render", help="render a scene from a YAML config")
@@ -40,17 +52,20 @@ def main(argv=None):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from . import BlackHole, Camera, Scene, shadow as render_shadow
+    from . import BlackHole, Camera, System, shadow as render_shadow
 
     t0 = time.time()
     if args.command == "render":
-        scene = Scene.from_yaml(args.config)
+        sys3 = System.from_yaml(args.config)
         if args.res:
             import dataclasses
-            scene.camera = dataclasses.replace(scene.camera,
-                                               resolution=tuple(args.res))
-        img = scene.render()
-        label = args.label or f"$a = {scene.black_hole.a:g}$"
+            sys3.cameras[0] = dataclasses.replace(sys3.cameras[0],
+                                                  resolution=tuple(args.res))
+        img = sys3.render()
+        st = sys3.physical.spacetime
+        default_label = (f"$a = {st.a:g}$" if hasattr(st, "a")
+                         else f"$q = {st.q:g}$")
+        label = args.label or default_label
         ax = img.plot(norm_to=args.norm, label=label)
         ax.figure.savefig(args.output, dpi=200, bbox_inches="tight")
         if args.npz:

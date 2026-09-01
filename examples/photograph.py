@@ -47,9 +47,8 @@ def main():
     # match the card aspect ratio to the loaded image
     h, w = source.image.shape[:2]
     source.height = args.card_width*h/w
-    ps = grayt.PhysicalSystem(black_hole=bh, rtol=1e-8, atol=1e-10)
-    ps.sources.append(source)
-    sys3 = grayt.System(physical=ps)
+    ps = grayt.PhysicalSystem(spacetime=bh, sources=[source])
+    sys3 = grayt.System(physical=ps, rtol=1e-8, atol=1e-10)
 
     # camera on the +x axis; FOV wide enough for card + Einstein ring
     cam = grayt.Camera(r=1000.0, theta=90.0, phi=0.0,

@@ -51,8 +51,10 @@ def plot_lensing(img, ax=None, mesh_deg=6.0):
     """Celestial-sphere quadrant coloring (paper Figs. 9-12).
 
     Escaped rays are colored by the quadrant of the sphere they strike;
-    captured rays are black. A black mesh with ``mesh_deg`` spacing in
-    latitude/longitude conveys the distortion.
+    captured rays are black. The latitude/longitude mesh (``mesh_deg``
+    spacing) is drawn as contour lines of the continuous escape-direction
+    fields, which stays smooth even where the deflection gradient is
+    steep (a per-pixel band test aliases into dashes there).
     """
     import matplotlib.pyplot as plt
     from matplotlib.colors import ListedColormap
@@ -62,29 +64,40 @@ def plot_lensing(img, ax=None, mesh_deg=6.0):
     if ax is None:
         _, ax = plt.subplots(figsize=(6, 6))
 
-    th = np.mod(img.theta_inf, 2*np.pi)
-    th = np.where(th > np.pi, 2*np.pi - th, th)  # fold to [0, pi]
+    escaped = img.status == STATUS_ESCAPED
+    # Fold theta smoothly into [0, pi]; keep phi continuous (unwrapped)
+    # for contouring and reduce it only for the quadrant test.
+    th_fold = np.arccos(np.clip(np.cos(img.theta_inf), -1.0, 1.0))
     ph = np.mod(img.phi_inf, 2*np.pi)
 
     # Quadrants (Fig. 9): top (theta < pi/2): green then red with phi;
     # bottom: blue then yellow.
-    quad = np.zeros_like(th, dtype=int)
-    top = th < np.pi/2
+    quad = np.zeros_like(th_fold, dtype=int)
+    top = th_fold < np.pi/2
     east = ph < np.pi
     quad[top & east] = 1      # green
     quad[top & ~east] = 2     # red
     quad[~top & east] = 3     # blue
     quad[~top & ~east] = 4    # yellow
+    quad[~escaped] = 0        # captured/disk/failed -> black
 
-    # Mesh lines of constant latitude/longitude
-    step = np.deg2rad(mesh_deg)
-    on_mesh = ((np.mod(th, step) < 0.15*step) |
-               (np.mod(ph, step) < 0.15*step))
-    quad[on_mesh] = 5         # black mesh line
-    quad[img.status != STATUS_ESCAPED] = 0  # captured/disk/failed -> black
-
-    colors = ["black", "#2ca02c", "#d62728", "#1f77b4", "#ffdf22", "black"]
+    colors = ["black", "#2ca02c", "#d62728", "#1f77b4", "#ffdf22"]
     ax.imshow(quad.T, origin="lower", extent=img.extent,
-              cmap=ListedColormap(colors), vmin=0, vmax=5, aspect="equal",
+              cmap=ListedColormap(colors), vmin=0, vmax=4, aspect="equal",
               interpolation="nearest")
+
+    # Mesh as contours of the (masked) escape-direction fields.
+    step = np.deg2rad(mesh_deg)
+    nx, ny = th_fold.shape
+    xs = np.linspace(img.extent[0], img.extent[1], nx, endpoint=False) + \
+        0.5*(img.extent[1] - img.extent[0])/nx
+    ys = np.linspace(img.extent[2], img.extent[3], ny, endpoint=False) + \
+        0.5*(img.extent[3] - img.extent[2])/ny
+    for field in (th_fold, img.phi_inf):
+        f = np.ma.masked_where(~escaped, field)
+        lo = np.floor(f.min()/step)*step
+        hi = np.ceil(f.max()/step)*step
+        levels = np.arange(lo, hi + 0.5*step, step)
+        ax.contour(xs, ys, f.T, levels=levels, colors="black",
+                   linewidths=0.4, antialiased=True)
     return ax

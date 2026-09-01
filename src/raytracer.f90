@@ -126,20 +126,47 @@ CONTAINS
             END IF
          END IF
 
-         Y = Y1
-
-         IF (Y(2) <= RCAP .OR. Y(2) <= 0.0_WP) THEN
+         IF (Y1(2) <= RCAP .OR. Y1(2) <= 0.0_WP) THEN
             STATUS = 1
-            YOUT = Y
+            YOUT = Y1
             RETURN
          END IF
-         IF (Y(2) >= R_ESC) THEN
+         IF (Y1(2) >= R_ESC) THEN
+            ! Land exactly on the celestial sphere r = R_ESC, otherwise
+            ! the recorded escape direction carries step-size jitter.
             STATUS = 0
-            YOUT = Y
+            CALL REFINE_RADIUS(METHOD, A, PT, PPHI, Y, HUSED, R_ESC, YOUT)
             RETURN
          END IF
+
+         Y = Y1
       END DO
    END SUBROUTINE TRACE_RAY
+
+   SUBROUTINE REFINE_RADIUS(METHOD, A, PT, PPHI, Y, HUSED, RTARGET, YC)
+      ! Bisection on the fraction of the accepted step to locate the
+      ! crossing of the sphere r = RTARGET (r is monotonic across the
+      ! step by construction: Y is inside, the full step lands outside).
+      INTEGER, INTENT(IN)   :: METHOD
+      REAL(WP), INTENT(IN)  :: A, PT, PPHI, Y(6), HUSED, RTARGET
+      REAL(WP), INTENT(OUT) :: YC(6)
+      REAL(WP) :: SLO, SHI, S, YS(6), EV(6)
+      INTEGER :: K
+
+      SLO = 0.0_WP
+      SHI = 1.0_WP
+      CALL RK_EMBEDDED_STEP(METHOD, A, PT, PPHI, Y, HUSED, YC, EV)
+      DO K = 1, 48
+         S = 0.5_WP*(SLO + SHI)
+         CALL RK_EMBEDDED_STEP(METHOD, A, PT, PPHI, Y, S*HUSED, YS, EV)
+         IF (YS(2) >= RTARGET) THEN
+            SHI = S
+            YC = YS
+         ELSE
+            SLO = S
+         END IF
+      END DO
+   END SUBROUTINE REFINE_RADIUS
 
    SUBROUTINE REFINE_CROSSING(METHOD, A, PT, PPHI, Y, HUSED, YFULL, YC, CROSSED)
       ! Bisection on the fraction of the accepted step to locate the

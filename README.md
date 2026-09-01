@@ -76,6 +76,6 @@ Documented where implemented in the code:
 - [x] M0 planning + skeleton & build (f2py/meson, `.f2py_f2cmap`)
 - [x] M1 geodesics + integrators (Figs. 4–5 constraint behaviour)
 - [x] M2 camera & shadow vs Bardeen (Fig. 6)
-- [ ] M3 celestial-sphere lensing (Fig. 12) — plotting helper in place
+- [x] M3 celestial-sphere lensing (Fig. 12)
 - [x] M4 thin accretion disk (Fig. 13)
-- [ ] M5 benchmarks (Fig. 8), q-metric, time-like geodesics
+- [ ] M5 q-metric, time-like geodesics (benchmark script: validation/fig8_benchmark.py)

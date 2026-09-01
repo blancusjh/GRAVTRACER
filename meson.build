@@ -16,7 +16,9 @@ incdir_numpy = run_command(
 incdir_f2py = run_command(
   py, ['-c', 'import numpy.f2py; print(numpy.f2py.get_include())'],
   check: true).stdout().strip()
-inc_np = include_directories(incdir_numpy, incdir_f2py)
+# Passed as -I flags rather than include_directories(): with an in-tree .venv
+# the numpy headers live under the source dir, which include_directories() rejects.
+inc_np_args = ['-I' + incdir_numpy, '-I' + incdir_f2py]
 
 fortran_sources = files(
   'src/kind_params.f90',
@@ -48,7 +50,7 @@ core_module = custom_target(
 py.extension_module(
   '_core',
   fortran_sources + [core_module, incdir_f2py / 'fortranobject.c'],
-  include_directories: inc_np,
+  c_args: inc_np_args,
   dependencies: [py_dep, omp],
   install: true,
   subdir: 'grayt',
@@ -69,4 +71,13 @@ py.install_sources(
     'python/grayt/system.py',
   ],
   subdir: 'grayt',
+)
+
+py.install_sources(
+  [
+    'python/grayt/gpu/__init__.py',
+    'python/grayt/gpu/engine.py',
+    'python/grayt/gpu/kernel.cl',
+  ],
+  subdir: 'grayt/gpu',
 )

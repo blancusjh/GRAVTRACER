@@ -81,6 +81,25 @@ gravtracer render configs/fig13_a095.yml -o a095.png
 gravtracer shadow -a 0.98 -o shadow.png
 ```
 
+### GPU backend
+
+`render`/`shadow` can run on any OpenCL device — Apple Silicon GPUs
+(via Apple's OpenCL-on-Metal) and NVIDIA/AMD/Intel — with one work-item
+per pixel (`pip install gravtracer[gpu]`, i.e. pyopencl):
+
+```python
+img = grayt.render(bh, cam, disk, backend="gpu")   # ~80x an M4's CPU cores
+grayt.gpu.devices()                                # enumerate devices
+```
+
+Precision follows the hardware: fp64 where supported (NVIDIA/AMD), fp32
+on Apple GPUs (no double-precision hardware); on fp32 the tolerances are
+clamped to `rtol>=1e-5, atol>=1e-7` and the result is image-quality
+(status maps match the CPU reference; hit radii/angles agree to ~1e-3).
+`precision="fp32"` also speeds up NVIDIA cards considerably. The Fortran
+CPU core (`backend="cpu"`, default) remains the double-precision
+reference; the GPU backend implements the `rkdp45` integrator only.
+
 ## Validation
 
 | Check | Result |

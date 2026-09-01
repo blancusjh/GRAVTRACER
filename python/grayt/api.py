@@ -43,7 +43,8 @@ def _method_id(name: str) -> int:
 
 def render(spacetime: Spacetime, camera: Camera, disk: ThinDisk | None = None,
            method: str = "rkdp45", rtol: float = 1e-8, atol: float = 1e-10,
-           max_steps: int = 500_000, constraint_monitor: bool = True) -> Image:
+           max_steps: int = 500_000, constraint_monitor: bool = True,
+           backend: str = "cpu", **backend_kwargs) -> Image:
     """Trace every pixel of ``camera`` through ``spacetime``; if ``disk``
     is given, shade disk intersections with I_obs = g^3 * F_PageThorne
     (eq. 19 of arXiv:2202.00086). The disk model is Kerr-only.
@@ -51,7 +52,23 @@ def render(spacetime: Spacetime, camera: Camera, disk: ThinDisk | None = None,
     ``constraint_monitor=False`` skips the per-step Hamiltonian
     constraint evaluation (~10% faster; purely diagnostic — it never
     feeds back into the integration). ``Image.herr`` is then all zeros.
+
+    ``backend``: "cpu" (Fortran + OpenMP, double precision, the
+    reference) or "gpu" (OpenCL: Apple Silicon fp32 / NVIDIA fp64;
+    needs pyopencl; rkdp45 only). Extra keyword arguments
+    (``precision``, ``device``) are forwarded to :func:`grayt.gpu.render`.
     """
+    if backend == "gpu":
+        from . import gpu
+        return gpu.render(spacetime, camera, disk, method=method,
+                          rtol=rtol, atol=atol, max_steps=max_steps,
+                          constraint_monitor=constraint_monitor,
+                          **backend_kwargs)
+    if backend != "cpu":
+        raise ValueError(f"unknown backend {backend!r}; use 'cpu' or 'gpu'")
+    if backend_kwargs:
+        raise TypeError("backend options "
+                        f"{sorted(backend_kwargs)} are GPU-only")
     if disk is not None and spacetime.mid != MID_KERR:
         raise ValueError("the thin-disk model (Page-Thorne, ISCO, redshift) "
                          "is defined for Kerr only; render this spacetime "

@@ -5,6 +5,7 @@ the suite stays green on CI machines without a GPU stack. On fp32-only
 devices (Apple Silicon) the comparisons use tolerances matched to
 single precision; on fp64 devices they are much tighter automatically.
 """
+import dataclasses
 import warnings
 
 import numpy as np
@@ -82,6 +83,30 @@ class TestBackendAPI:
         img = _render_gpu(grayt.BlackHole(a=0.5), CAM)
         assert img.meta["backend"] == "gpu"
         assert img.meta["precision"] in ("fp32", "fp64")
+
+    def test_persistent_renderer_reuses_resources(self):
+        bh = grayt.BlackHole(a=0.5)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            renderer = gpu.Renderer(bh, resolution=CAM.resolution)
+        buffer_ids = tuple(id(buf) for buf in renderer._d_real.values())
+        first = renderer.render(CAM)
+        saved = first.status.copy()
+        second = renderer.render(dataclasses.replace(CAM, phi=12.0))
+
+        assert tuple(id(buf) for buf in renderer._d_real.values()) == buffer_ids
+        assert np.array_equal(first.status, saved)
+        assert not np.shares_memory(first.status, second.status)
+        assert second.meta["persistent_renderer"] is True
+
+    def test_persistent_renderer_requires_its_resolution(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            renderer = gpu.Renderer(
+                grayt.BlackHole(a=0.5), resolution=CAM.resolution)
+        wrong = dataclasses.replace(CAM, resolution=(32, 32))
+        with pytest.raises(ValueError, match="does not match"):
+            renderer.render(wrong)
 
     def test_rejects_non_dp45(self):
         with pytest.raises(ValueError, match="rkdp45"):

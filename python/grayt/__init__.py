@@ -28,6 +28,8 @@ from .api import (render, shadow, trace, camera_ray, orbit_ic,
 from .system import PhysicalSystem, System
 from .plotting import (plot_orbits_2d, plot_image, plot_shadow,
                        plot_lensing)
+from . import gpu
+from .viewer import view
 
 __all__ = [
     "Spacetime", "BlackHole", "QMetric",
@@ -37,6 +39,7 @@ __all__ = [
     "render", "shadow", "trace", "camera_ray", "orbit_ic", "flux_profile",
     "PhysicalSystem", "System",
     "plot_orbits_2d", "plot_image", "plot_shadow", "plot_lensing",
+    "gpu", "view",
     "STATUS_ESCAPED", "STATUS_CAPTURED", "STATUS_DISK", "STATUS_FAILED",
 ]
 

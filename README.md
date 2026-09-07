@@ -29,6 +29,7 @@ Results: Image, Photograph, Trajectory, Ray
 uv pip install .                                   # regular install
 uv pip install meson-python numpy ninja meson      # then, for editable:
 uv pip install -e . --no-build-isolation
+uv pip install '.[viewer]'                         # GPU + desktop viewer
 ```
 
 (`--no-build-isolation` for editable installs is the standard
@@ -79,6 +80,7 @@ CLI (YAML scenes; schema in `System.from_yaml.__doc__`):
 ```sh
 gravtracer render configs/fig13_a095.yml -o a095.png
 gravtracer shadow -a 0.98 -o shadow.png
+gravtracer view -a 0.95
 ```
 
 ### GPU backend
@@ -90,6 +92,10 @@ per pixel (`pip install gravtracer[gpu]`, i.e. pyopencl):
 ```python
 img = grayt.render(bh, cam, disk, backend="gpu")   # ~80x an M4's CPU cores
 grayt.gpu.devices()                                # enumerate devices
+
+# Reuse allocations and the disk flux table across changing cameras:
+renderer = grayt.gpu.Renderer(bh, disk, cam.resolution)
+next_img = renderer.render(cam)
 ```
 
 Precision follows the hardware: fp64 where supported (NVIDIA/AMD), fp32
@@ -99,6 +105,27 @@ clamped to `rtol>=1e-5, atol>=1e-7` and the result is image-quality
 `precision="fp32"` also speeds up NVIDIA cards considerably. The Fortran
 CPU core (`backend="cpu"`, default) remains the double-precision
 reference; the GPU backend implements the `rkdp45` integrator only.
+
+### Interactive viewer
+
+The optional VisPy viewer turns the GPU renderer into a live observer view:
+
+```python
+grayt.view(bh, disk, cam)  # install gravtracer[viewer] first
+```
+
+Left-drag orbits the observer in inclination/azimuth and the mouse wheel
+zooms the image plane. Interaction renders at a preview resolution and
+automatically refines on release/idle. The default view shows only the
+physical disk intensity. `M` cycles intensity, lensing, shadow, and the
+optional composite overlay with its colored celestial grid. `R` resets,
+Space refines, `S` saves the current frame, and Escape closes the window.
+The CLI exposes resolution, preview resolution, precision, OpenCL device,
+disk, and display-mode options through `gravtracer view --help`.
+
+The integrator's maximum step grows conservatively in the weak-curvature far
+field (`max(25, min(0.1 r, 100))`); the adaptive error test is unchanged, and
+the same rule is used by the Fortran reference and OpenCL kernel.
 
 ## Validation
 
@@ -112,7 +139,8 @@ reference; the GPU backend implements the `rkdp45` integrator only.
 | Weak-field deflection (b = 50) | 4M/b + 15πM²/4b² to < 2% |
 | q-metric | q = 0 ≡ Schwarzschild to round-off; shadow scales with ADM mass 1+q |
 
-36 tests: `make test`. Example scripts (outputs go to git-ignored
+58 tests: `make test` (OpenCL cases skip when no device is available).
+Example scripts (outputs go to git-ignored
 `output/`); defaults reproduce the paper's figures:
 
 | Script | Defaults reproduce |

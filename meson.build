@@ -69,6 +69,7 @@ py.install_sources(
     'python/grayt/results.py',
     'python/grayt/spacetime.py',
     'python/grayt/system.py',
+    'python/grayt/viewer.py',
   ],
   subdir: 'grayt',
 )

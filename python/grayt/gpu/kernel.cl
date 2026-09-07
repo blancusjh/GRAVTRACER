@@ -26,7 +26,9 @@ typedef float real;
 #define NDIM 6
 
 #define HMIN 1e-12
-#define HMAX 25.0
+#define HMAX_NEAR 25.0
+#define HMAX_FAR 100.0
+#define HMAX_SCALE 0.1
 #define SAFETY 0.9
 #define MAX_REJECTS 60
 #ifdef GRAYT_FP64
@@ -315,7 +317,12 @@ static int advance_adaptive(real par, real pt, real pphi,
         *hused = *h;
         *h *= fmin((real)5.0, fmax((real)0.2,
                    (real)(SAFETY*pow(err, (real)-0.2))));
-        if (fabs(*h) > HMAX) *h = copysign((real)HMAX, *h);
+        /* In the weak-curvature far field, let the error controller take
+         * longer steps.  Keep the original 25 M cap near the compact object
+         * and a conservative absolute ceiling for very distant observers. */
+        real hmax = fmin((real)HMAX_FAR,
+                         fmax((real)HMAX_NEAR, (real)HMAX_SCALE*y1[1]));
+        if (fabs(*h) > hmax) *h = copysign(hmax, *h);
         if (fabs(*h) < HMIN) *h = copysign((real)HMIN, *h);
         return (y1[1] == y1[1]);   /* NaN check */
     }

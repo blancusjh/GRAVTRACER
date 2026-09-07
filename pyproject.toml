@@ -21,6 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=7"]
 gpu = ["pyopencl>=2024.1"]
+viewer = ["pyopencl>=2024.1", "vispy>=0.14", "PySide6>=6.5"]
 
 [project.scripts]
 gravtracer = "grayt.cli:main"

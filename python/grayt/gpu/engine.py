@@ -129,133 +129,206 @@ def _engine(index: int | None) -> tuple["_Engine", int]:
     return _ENGINES[i], i
 
 
+class Renderer:
+    """Persistent OpenCL renderer for repeated views of one scene.
+
+    The OpenCL context, compiled kernel, Page--Thorne flux table, and all
+    device/host output buffers are allocated once.  Only camera values and
+    the kernel execution change between :meth:`render` calls.  This is the
+    intended interface for interactive applications; :func:`render` remains
+    the convenient one-shot wrapper.
+
+    Parameters other than ``camera`` are fixed for the renderer's lifetime.
+    A camera passed to :meth:`render` must use the configured ``resolution``.
+    Create one renderer per resolution for progressive rendering.
+    """
+
+    _REAL_OUTPUTS = ("intens", "gmap", "rhit", "herrm", "thf", "phf")
+
+    def __init__(self, spacetime: Spacetime, disk: ThinDisk | None = None,
+                 resolution: tuple[int, int] = (512, 256),
+                 method: str = "rkdp45", rtol: float = 1e-8,
+                 atol: float = 1e-10, max_steps: int = 500_000,
+                 constraint_monitor: bool = False,
+                 precision: str = "auto", device: int | None = None):
+        if cl is None:
+            raise RuntimeError(
+                "the GPU backend needs pyopencl "
+                f"(pip install pyopencl): {_CL_ERROR}")
+        if method != "rkdp45":
+            raise ValueError("the GPU backend implements rkdp45 only; use "
+                             "backend='cpu' for other integrators")
+        if disk is not None and spacetime.mid != MID_KERR:
+            raise ValueError(
+                "the thin-disk model (Page-Thorne, ISCO, redshift) is "
+                "defined for Kerr only; render this spacetime without a disk")
+        nx, ny = resolution
+        if not (isinstance(nx, (int, np.integer)) and
+                isinstance(ny, (int, np.integer)) and nx > 0 and ny > 0):
+            raise ValueError(
+                f"resolution must be positive integers, got {resolution}")
+
+        self.spacetime = spacetime
+        self.disk = disk
+        self.resolution = (int(nx), int(ny))
+        self.method = method
+        self.max_steps = max_steps
+        self.constraint_monitor = constraint_monitor
+        self._eng, self.device_index = _engine(device)
+        self._par = float(spacetime.par[0])
+        self._rcap = float(spacetime.capture_radius) + 1e-2
+
+        if precision == "auto":
+            self.fp64 = self._eng.fp64
+        elif precision == "fp64":
+            if not self._eng.fp64:
+                raise ValueError(
+                    f"device {self._eng.device.name.strip()!r} has no fp64 "
+                    "support (Apple GPUs are fp32-only); use "
+                    "precision='fp32' or 'auto'")
+            self.fp64 = True
+        elif precision == "fp32":
+            self.fp64 = False
+        else:
+            raise ValueError("precision must be 'auto', 'fp64' or 'fp32'")
+
+        if not self.fp64 and (rtol < FP32_RTOL_FLOOR or
+                              atol < FP32_ATOL_FLOOR):
+            warnings.warn(
+                f"fp32 GPU device: clamping tolerances to "
+                f"rtol>={FP32_RTOL_FLOOR}, atol>={FP32_ATOL_FLOOR} "
+                f"(requested rtol={rtol}, atol={atol})", stacklevel=2)
+            rtol = max(rtol, FP32_RTOL_FLOOR)
+            atol = max(atol, FP32_ATOL_FLOOR)
+        self.rtol = rtol
+        self.atol = atol
+        self.real = np.float64 if self.fp64 else np.float32
+
+        self._disk_on = 1 if disk is not None else 0
+        self._rout = disk.r_out if disk is not None else 20.0
+        self._l0 = disk.l0 if disk is not None else 0.0
+        self._rin = -1.0 if (disk is None or disk.r_in is None) else disk.r_in
+        if self._disk_on and self._rin <= 0.0:
+            self._rin = float(_core.raytracer.get_isco(self._par))
+
+        # Build and upload this immutable scene data only once.
+        if self._disk_on:
+            tab_r, tab_f = _core.disk_model.flux_profile(
+                self._par, self._rout, 4000)
+            self._tab_r1, self._tab_r2 = float(tab_r[0]), float(tab_r[-1])
+            self._tab_dr = float(tab_r[1] - tab_r[0])
+            tab_f = np.ascontiguousarray(tab_f, dtype=self.real)
+        else:
+            tab_f = np.zeros(2, dtype=self.real)
+            self._tab_r1 = self._tab_r2 = 0.0
+            self._tab_dr = 1.0
+        self._tab_n = len(tab_f)
+
+        mf = cl.mem_flags
+        ctx = self._eng.context
+        itemsize = np.dtype(self.real).itemsize
+        npix = nx*ny
+        self._d_tabf = cl.Buffer(
+            ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tab_f)
+        self._d_real = {
+            name: cl.Buffer(ctx, mf.WRITE_ONLY, npix*itemsize)
+            for name in self._REAL_OUTPUTS
+        }
+        self._d_status = cl.Buffer(ctx, mf.WRITE_ONLY, npix*4)
+        self._host_real = {
+            name: np.empty((nx, ny), dtype=self.real)
+            for name in self._REAL_OUTPUTS
+        }
+        self._host_status = np.empty((nx, ny), dtype=np.int32)
+        self._kernel = cl.Kernel(
+            self._eng.program(spacetime.mid, self.fp64), "render_slab")
+        self._rows_per_slab = max(1, min(ny, 262_144 // max(nx, 1)))
+
+    @property
+    def device_name(self) -> str:
+        return self._eng.device.name.strip()
+
+    @property
+    def precision(self) -> str:
+        return "fp64" if self.fp64 else "fp32"
+
+    def render(self, camera: Camera) -> Image:
+        """Render ``camera`` while reusing all persistent scene resources."""
+        if tuple(camera.resolution) != self.resolution:
+            raise ValueError(
+                f"camera resolution {camera.resolution} does not match "
+                f"renderer resolution {self.resolution}")
+
+        nx, ny = self.resolution
+        queue = self._eng.queue
+        R, I = self.real, np.int32
+        r_esc = 1.1*camera.r
+
+        # Row slabs keep each enqueue short (Apple/Windows GPU watchdogs
+        # kill kernels that hog the device for seconds).  The camera x-axis
+        # is reversed/negated to preserve GRAVTRACER's paper convention.
+        for row0 in range(0, ny, self._rows_per_slab):
+            nrows = min(self._rows_per_slab, ny - row0)
+            self._kernel(
+                queue, ((nx*nrows + 63)//64*64,), None,
+                R(self._par), R(camera.r),
+                R(np.deg2rad(camera.theta)), R(np.deg2rad(camera.phi)),
+                R(-camera.x[1]), R(-camera.x[0]),
+                R(camera.y[0]), R(camera.y[1]),
+                I(nx), I(ny), I(row0), I(nrows),
+                R(self.rtol), R(self.atol),
+                I(self._disk_on), R(self._rin), R(self._rout), R(self._l0),
+                I(self.max_steps), I(1 if self.constraint_monitor else 0),
+                R(self._rcap), R(r_esc),
+                self._d_tabf, I(self._tab_n), R(self._tab_r1),
+                R(self._tab_r2), R(self._tab_dr),
+                self._d_real["intens"], self._d_real["gmap"],
+                self._d_real["rhit"], self._d_status,
+                self._d_real["herrm"], self._d_real["thf"],
+                self._d_real["phf"])
+
+        for name, buf in self._d_real.items():
+            cl.enqueue_copy(queue, self._host_real[name], buf)
+        cl.enqueue_copy(queue, self._host_status, self._d_status)
+        queue.finish()
+
+        # Copy before returning: a later frame may reuse the host staging
+        # arrays, while every returned Image remains an independent result.
+        host = {name: arr.astype(np.float64, copy=True)
+                for name, arr in self._host_real.items()}
+        status = self._host_status.copy()
+        intens, gmap, rhit, herrm, thf, phf, status = (
+            np.flip(m, axis=0) for m in
+            (host["intens"], host["gmap"], host["rhit"], host["herrm"],
+             host["thf"], host["phf"], status))
+
+        meta = {
+            "spacetime": dataclasses.asdict(self.spacetime),
+            "camera": dataclasses.asdict(camera),
+            "disk": dataclasses.asdict(self.disk) if self.disk else None,
+            "method": self.method, "rtol": self.rtol, "atol": self.atol,
+            "backend": "gpu", "device": self.device_name,
+            "device_index": self.device_index, "precision": self.precision,
+            "persistent_renderer": True,
+        }
+        return Image(intensity=intens, g=gmap, r_hit=rhit,
+                     status=status.astype(np.int32), herr=herrm,
+                     theta_inf=thf, phi_inf=phf, extent=camera.extent,
+                     meta=meta)
+
+
 def render(spacetime: Spacetime, camera: Camera, disk: ThinDisk | None = None,
            method: str = "rkdp45", rtol: float = 1e-8, atol: float = 1e-10,
            max_steps: int = 500_000, constraint_monitor: bool = False,
            precision: str = "auto", device: int | None = None) -> Image:
-    """GPU counterpart of :func:`grayt.render` (one work-item per pixel).
+    """One-shot GPU counterpart of :func:`grayt.render`.
 
-    ``precision``: "auto" (fp64 if the device supports it, else fp32),
-    "fp64", or "fp32" (useful on NVIDIA, where fp32 is much faster).
-    On fp32 the tolerances are clamped to ``FP32_RTOL_FLOOR``/
-    ``FP32_ATOL_FLOOR`` with a warning; expect image-quality rather
-    than reference-quality accuracy. ``device`` indexes
-    :func:`grayt.gpu.devices()`.
+    For repeated camera views, construct :class:`Renderer` once to retain
+    the flux table and OpenCL buffers between frames.
     """
-    if cl is None:
-        raise RuntimeError(
-            f"the GPU backend needs pyopencl (pip install pyopencl): {_CL_ERROR}")
-    if method != "rkdp45":
-        raise ValueError("the GPU backend implements rkdp45 only; use "
-                         "backend='cpu' for other integrators")
-    if disk is not None and spacetime.mid != MID_KERR:
-        raise ValueError("the thin-disk model (Page-Thorne, ISCO, redshift) "
-                         "is defined for Kerr only; render this spacetime "
-                         "without a disk")
-
-    eng, dev_index = _engine(device)
-
-    if precision == "auto":
-        fp64 = eng.fp64
-    elif precision == "fp64":
-        if not eng.fp64:
-            raise ValueError(
-                f"device {eng.device.name.strip()!r} has no fp64 support "
-                "(Apple GPUs are fp32-only); use precision='fp32' or 'auto'")
-        fp64 = True
-    elif precision == "fp32":
-        fp64 = False
-    else:
-        raise ValueError("precision must be 'auto', 'fp64' or 'fp32'")
-
-    if not fp64 and (rtol < FP32_RTOL_FLOOR or atol < FP32_ATOL_FLOOR):
-        warnings.warn(
-            f"fp32 GPU device: clamping tolerances to rtol>={FP32_RTOL_FLOOR}, "
-            f"atol>={FP32_ATOL_FLOOR} (requested rtol={rtol}, atol={atol})",
-            stacklevel=2)
-        rtol = max(rtol, FP32_RTOL_FLOOR)
-        atol = max(atol, FP32_ATOL_FLOOR)
-
-    real = np.float64 if fp64 else np.float32
-    nx, ny = camera.resolution
-    npix = nx*ny
-
-    disk_on = 1 if disk is not None else 0
-    rout = disk.r_out if disk is not None else 20.0
-    l0 = disk.l0 if disk is not None else 0.0
-    rin = -1.0 if (disk is None or disk.r_in is None) else disk.r_in
-    if disk_on and rin <= 0.0:
-        rin = float(_core.raytracer.get_isco(spacetime.par[0]))
-
-    # Page-Thorne flux table, built in double on the CPU core exactly as
-    # the Fortran RENDER_IMAGE does (INIT_FLUX_TABLE(a, rout, 4000)).
-    if disk_on:
-        tab_r, tab_f = _core.disk_model.flux_profile(
-            spacetime.par[0], rout, 4000)
-        tab_r1, tab_r2 = float(tab_r[0]), float(tab_r[-1])
-        tab_dr = float(tab_r[1] - tab_r[0])
-        tab_f = np.ascontiguousarray(tab_f, dtype=real)
-    else:
-        tab_f = np.zeros(2, dtype=real)
-        tab_r1 = tab_r2 = 0.0
-        tab_dr = 1.0
-
-    rcap = float(spacetime.capture_radius) + 1e-2
-    r_esc = 1.1*camera.r
-
-    mf = cl.mem_flags
-    ctx, queue = eng.context, eng.queue
-    d_tabf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tab_f)
-    d_real = {name: cl.Buffer(ctx, mf.WRITE_ONLY, npix*np.dtype(real).itemsize)
-              for name in ("intens", "gmap", "rhit", "herrm", "thf", "phf")}
-    d_status = cl.Buffer(ctx, mf.WRITE_ONLY, npix*4)
-
-    kern = eng.program(spacetime.mid, fp64).render_slab
-    R, I = real, np.int32
-
-    # Row slabs keep each enqueue short (Apple/Windows GPU watchdogs
-    # kill kernels that hog the device for seconds).
-    rows_per_slab = max(1, min(ny, 262_144 // max(nx, 1)))
-    # Fortran camera x-axis is mirrored w.r.t. the paper's figures
-    # (same convention as api.render): pass x in reversed, negated order.
-    for row0 in range(0, ny, rows_per_slab):
-        nrows = min(rows_per_slab, ny - row0)
-        kern(queue, ((nx*nrows + 63)//64*64,), None,
-             R(spacetime.par[0]), R(camera.r), R(np.deg2rad(camera.theta)),
-             R(np.deg2rad(camera.phi)),
-             R(-camera.x[1]), R(-camera.x[0]), R(camera.y[0]), R(camera.y[1]),
-             I(nx), I(ny), I(row0), I(nrows),
-             R(rtol), R(atol),
-             I(disk_on), R(rin), R(rout), R(l0),
-             I(max_steps), I(1 if constraint_monitor else 0),
-             R(rcap), R(r_esc),
-             d_tabf, I(len(tab_f)), R(tab_r1), R(tab_r2), R(tab_dr),
-             d_real["intens"], d_real["gmap"], d_real["rhit"],
-             d_status, d_real["herrm"], d_real["thf"], d_real["phf"])
-
-    host = {}
-    for name, buf in d_real.items():
-        arr = np.empty((nx, ny), dtype=real)
-        cl.enqueue_copy(queue, arr, buf)
-        host[name] = arr.astype(np.float64)
-    status = np.empty((nx, ny), dtype=np.int32)
-    cl.enqueue_copy(queue, status, d_status)
-    queue.finish()
-
-    # same orientation post-processing as api.render
-    intens, gmap, rhit, herrm, thf, phf, status = (
-        np.flip(m, axis=0) for m in (host["intens"], host["gmap"],
-                                     host["rhit"], host["herrm"],
-                                     host["thf"], host["phf"], status))
-
-    meta = {"spacetime": dataclasses.asdict(spacetime),
-            "camera": dataclasses.asdict(camera),
-            "disk": dataclasses.asdict(disk) if disk else None,
-            "method": method, "rtol": rtol, "atol": atol,
-            "backend": "gpu",
-            "device": eng.device.name.strip(),
-            "device_index": dev_index,
-            "precision": "fp64" if fp64 else "fp32"}
-    return Image(intensity=intens, g=gmap, r_hit=rhit,
-                 status=status.astype(np.int32), herr=herrm,
-                 theta_inf=thf, phi_inf=phf, extent=camera.extent, meta=meta)
+    renderer = Renderer(
+        spacetime, disk, camera.resolution, method=method, rtol=rtol,
+        atol=atol, max_steps=max_steps,
+        constraint_monitor=constraint_monitor, precision=precision,
+        device=device)
+    return renderer.render(camera)

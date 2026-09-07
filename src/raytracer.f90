@@ -30,7 +30,9 @@ MODULE RAYTRACER
    PUBLIC :: GET_HORIZON, GET_ISCO
 
    REAL(WP), PARAMETER :: HMIN = 1.0E-12_WP
-   REAL(WP), PARAMETER :: HMAX = 25.0_WP
+   REAL(WP), PARAMETER :: HMAX_NEAR = 25.0_WP
+   REAL(WP), PARAMETER :: HMAX_FAR = 100.0_WP
+   REAL(WP), PARAMETER :: HMAX_SCALE = 0.1_WP
    REAL(WP), PARAMETER :: CAPTURE_BUFFER = 1.0E-2_WP
    REAL(WP), PARAMETER :: SAFETY = 0.9_WP
    INTEGER, PARAMETER :: MAX_REJECTS = 60
@@ -63,8 +65,9 @@ CONTAINS
                                Y, H, Y1, HUSED, OK, KS, K1_VALID)
       ! Take one accepted step: attempt with the current H, shrink on
       ! rejection, and on acceptance store the used step in HUSED and
-      ! leave the suggestion for the next step in H (clamped to
-      ! [HMIN, HMAX]). OK = .FALSE. on step underflow or NaN state.
+      ! leave the suggestion for the next step in H (clamped to HMIN
+      ! and the radius-scaled far-field cap). OK = .FALSE. on step
+      ! underflow or NaN state.
       !
       ! For Dormand-Prince, KS carries the seven stages (FSAL: with
       ! K1_VALID, KS(:, 1) = f(Y) is reused instead of recomputed; on
@@ -78,7 +81,7 @@ CONTAINS
       LOGICAL, INTENT(INOUT)  :: K1_VALID
       REAL(WP), INTENT(OUT)   :: Y1(6), HUSED
       LOGICAL, INTENT(OUT)    :: OK
-      REAL(WP) :: EV(6), SC(6), ERR
+      REAL(WP) :: EV(6), SC(6), ERR, HMAX_LOCAL
       INTEGER :: K
 
       OK = .FALSE.
@@ -103,7 +106,11 @@ CONTAINS
 
          HUSED = H
          H = H*MIN(5.0_WP, MAX(0.2_WP, SAFETY*ERR**(-0.2_WP)))
-         IF (ABS(H) > HMAX) H = SIGN(HMAX, H)
+         ! Curvature is weak in the far field, so allow longer steps while
+         ! retaining the original 25 M cap near the compact object and a
+         ! conservative absolute ceiling.  Error acceptance is unchanged.
+         HMAX_LOCAL = MIN(HMAX_FAR, MAX(HMAX_NEAR, HMAX_SCALE*Y1(2)))
+         IF (ABS(H) > HMAX_LOCAL) H = SIGN(HMAX_LOCAL, H)
          IF (ABS(H) < HMIN) H = SIGN(HMIN, H)
          OK = (Y1(2) == Y1(2))
          RETURN

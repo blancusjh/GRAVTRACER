@@ -13,7 +13,8 @@ Usage::
 
 or directly: ``grayt.gpu.render(bh, cam, disk, precision="fp32")``.
 """
-from .engine import available, devices, render, FP32_RTOL_FLOOR, FP32_ATOL_FLOOR
+from .engine import (Renderer, available, devices, render,
+                     FP32_RTOL_FLOOR, FP32_ATOL_FLOOR)
 
-__all__ = ["available", "devices", "render",
+__all__ = ["Renderer", "available", "devices", "render",
            "FP32_RTOL_FLOOR", "FP32_ATOL_FLOOR"]

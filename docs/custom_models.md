@@ -261,6 +261,23 @@ parameters and raw keyframes accompany the videos. `--quick` reduces image
 size and frame count; `--skip-videos` produces only stills.
 The generated `index.html` provides a local browser for all artifacts.
 
+Embed interactive 3D views into that same page with:
+
+```sh
+uv pip install '.[interactive]'
+PYTHONPATH=python python examples/interactive_gallery.py --output output/stationary_models
+```
+
+The ray viewer switches between five metrics and supports orbit, zoom, pan,
+reset, and layer visibility. A second viewer shows emissivity isosurfaces
+from `radiation_snapshot.npz` when that snapshot is present. These are
+coordinate visualizations; the displayed vacuum rays continue through the
+reference disk plane. The HTML embeds Plotly and the plotted data, so opening
+`index.html` via `file://` works without a server or an internet connection.
+Rebuilding the gallery index preserves the generated interactive section.
+The plotted datasets are also exported as `geodesic-view.json` and
+`volume-view.json`.
+
 ```python
 cameras = grayt.orbit_cameras(camera, frames=96, inclination=(45,80))
 grayt.render_movie("orbit.mp4", bh, cameras, disk=grayt.PageThorneDisk(bh),

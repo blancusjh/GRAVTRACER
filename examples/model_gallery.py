@@ -25,6 +25,13 @@ from grayt.animation import VideoWriter
 
 def build_index(output):
     """Local, portable artifact browser; all assets remain relative files."""
+    output = Path(output)
+    interactive_path = output / "interactive_views.html"
+    interactive = (
+        interactive_path.read_text(encoding="utf-8")
+        if interactive_path.exists()
+        else ""
+    )
     records = json.loads((output / "manifest.json").read_text())
     cards = []
     for row in records:
@@ -54,8 +61,11 @@ def build_index(output):
 <title>GRAVTRACER — stationary models</title>
 <style>body{background:#090d16;color:#dce4ef;font:16px/1.6 system-ui;margin:32px auto;max-width:1400px;padding:0 24px}
 h1{font-size:36px}h2{font-size:19px}a{color:#8fcaff}img,video{width:100%;height:auto;border-radius:8px}
-main{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px}article{background:#131b28;padding:20px;border-radius:12px}
-p{color:#b9c5d6}.intro{max-width:960px;margin-bottom:32px}</style>
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:24px}article{background:#131b28;padding:20px;border-radius:12px}
+p{color:#b9c5d6}.intro{max-width:960px;margin-bottom:32px}
+.interactive-section{margin:32px 0 48px}.interactive-section>h2{font-size:28px}
+.interactive-plot{background:#0d1420;border:1px solid #29384c;border-radius:12px;overflow:hidden;margin:18px 0}
+</style>
 <h1>Stationary spacetimes and light</h1><div class="intro">
 <p>Kerr Page–Thorne disks, spherical stellar surfaces, and theoretical charged/quadrupolar comparisons.
 The sky is synthetic; false colors use fixed exposure. All propagation is computed in the specified metric.</p>
@@ -63,7 +73,9 @@ The sky is synthetic; false colors use fixed exposure. All propagation is comput
 The volume example imports prescribed gray radiation coefficients, not a GRMHD solution.</p>
 <p><a href="gallery.png">Full comparison sheet</a> · <a href="manifest.json">Scientific manifest</a> ·
 <a href="celestial_map.png">Celestial map</a> · <a href="metric_convergence.json">Convergence measurements</a></p>
-</div><main>"""
+</div>"""
+        + interactive
+        + "<main>"
         + "\n".join(cards)
         + "</main></html>\n"
     )

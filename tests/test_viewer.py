@@ -93,6 +93,20 @@ def test_b_cycles_background_without_retracing():
         assert event.handled
 
 
+def test_vispy_key_objects_trigger_background_switch():
+    from types import SimpleNamespace
+    keys = pytest.importorskip("vispy.util.keys")
+    from grayt.viewer import InteractiveViewer
+    viewer = InteractiveViewer.__new__(InteractiveViewer)
+    viewer.background = "black"
+    viewer._last_image = None
+    for key, expected in [("b", "celestial"), ("B", "grid"), ("b", "black")]:
+        event = SimpleNamespace(key=keys.Key(key), handled=False)
+        viewer._on_key_press(event)
+        assert viewer.background == expected
+        assert event.handled
+
+
 def test_compose_frame_rejects_unknown_mode():
     with pytest.raises(ValueError, match="viewer mode"):
         compose_frame(_maps(), "infrared")

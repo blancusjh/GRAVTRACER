@@ -371,7 +371,9 @@ class InteractiveViewer:
         self.render(refine=True)
 
     def _on_key_press(self, event):
-        key = str(event.key).upper()
+        # VisPy Key.__str__ returns "<Key 'B'>", not "B". Use the key's
+        # name so real backend events and plain-string callers agree.
+        key = getattr(event.key, "name", str(event.key)).upper()
         if key == "R":
             self.state.reset()
             self.render(refine=True)

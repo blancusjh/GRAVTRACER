@@ -2,9 +2,9 @@
 
 A ``Spacetime`` names a metric implemented in the Fortran core (module
 SPACETIME) via an integer id ``mid`` and a parameter vector ``par``.
-Everything downstream — geodesic tracing, cameras, photographs — is
-metric-agnostic. Adding a spacetime = one Fortran module + one CASE
-line + one subclass here.
+Analytic registered metrics use the Fortran dispatcher. CustomMetric and
+TabulatedMetric (grayt.metrics) import compatible stationary axisymmetric
+geometry without recompilation. Radiation and boundary choices are separate.
 """
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 project(
   'gravtracer',
   'c', 'fortran',
-  version: '0.2.0',
+  version: '0.3.0',
   meson_version: '>=1.1.0',
   default_options: ['buildtype=release', 'warning_level=1'],
 )
@@ -24,6 +24,7 @@ fortran_sources = files(
   'src/kind_params.f90',
   'src/kerr_metric.f90',
   'src/q_metric.f90',
+  'src/tabulated_metric.f90',
   'src/spacetime.f90',
   'src/geodesic_eom.f90',
   'src/rk_integrators.f90',
@@ -43,7 +44,7 @@ core_module = custom_target(
     'only:', 'metric_cov', 'metric_contra', 'get_horizon', 'get_isco',
     'camera_init', 'trace_ray', 'render_image', 'trace_geodesic',
     'flux_profile', 'init_flux_table', 'get_disk_omega', 'get_redshift',
-    'trace_to_plane', 'trace_bundle_to_plane', ':',
+    'trace_to_plane', 'trace_bundle_to_plane', 'set_metric_table', 'render_geometry', ':',
   ],
 )
 
@@ -61,6 +62,14 @@ py.install_sources(
     'python/grayt/__init__.py',
     'python/grayt/__main__.py',
     'python/grayt/api.py',
+    'python/grayt/_runtime.py',
+    'python/grayt/metrics.py',
+    'python/grayt/emission.py',
+    'python/grayt/sky.py',
+    'python/grayt/scene.py',
+    'python/grayt/animation.py',
+    'python/grayt/volume.py',
+
     'python/grayt/cli.py',
     'python/grayt/geometry.py',
     'python/grayt/instruments.py',

@@ -4,7 +4,7 @@ requires = ["meson-python>=0.15", "numpy>=1.26"]
 
 [project]
 name = "gravtracer"
-version = "0.2.0"
+version = "0.3.0"
 description = "Relativistic ray tracing around compact objects (Kerr, q-metric): shadows, thin disks, lensing, image formation"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -43,4 +43,20 @@ __all__ = [
     "STATUS_ESCAPED", "STATUS_CAPTURED", "STATUS_DISK", "STATUS_FAILED",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
+
+from .metrics import CustomMetric, TabulatedMetric, ReissnerNordstrom, SphericalStar
+from .emission import TabulatedDisk, EmittingDisk, EmittingSurface, PageThorneDisk, circular_velocity, rotating_velocity
+from .sky import CelestialSky
+from .scene import RayBundle, SceneImage, trace_bundle, render_scene
+
+__all__ += ["TabulatedDisk", "CustomMetric", "TabulatedMetric", "ReissnerNordstrom", "SphericalStar",
+            "EmittingDisk", "EmittingSurface", "PageThorneDisk", "circular_velocity",
+            "rotating_velocity", "CelestialSky", "RayBundle", "SceneImage",
+            "trace_bundle", "render_scene"]
+
+from .animation import orbit_cameras, render_movie
+__all__ += ["orbit_cameras", "render_movie"]
+
+from .volume import EmittingVolume, VolumeGrid, VolumeImage, render_volume
+__all__ += ["EmittingVolume", "VolumeGrid", "VolumeImage", "render_volume"]

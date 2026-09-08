@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from . import _core
+from ._runtime import metric_context
 
 
 def bl_to_cart(r, theta, phi):
@@ -27,6 +28,7 @@ def cart_to_bl(p):
     return r, np.arccos(np.clip(z/r, -1, 1)), np.arctan2(y, x)
 
 
+@metric_context
 def null_momentum(spacetime, point_cart, direction_cart):
     """Null 4-momentum at ``point_cart`` moving along ``direction_cart``.
 

@@ -95,9 +95,17 @@ def _main(argv=None):
         img = sys3.render()
         st = sys3.physical.spacetime
         default_label = (f"$a = {st.a:g}$" if hasattr(st, "a")
-                         else f"$q = {st.q:g}$")
+                         else f"$q = {st.q:g}$" if hasattr(st, "q")
+                         else getattr(st, "name", type(st).__name__))
         label = args.label or default_label
-        ax = img.plot(norm_to=args.norm, label=label)
+        from .scene import SceneImage
+        if isinstance(img, SceneImage):
+            if args.norm is not None:
+                raise ValueError("RGB scenes use YAML exposure; --norm is for legacy intensity maps")
+            ax = img.plot()
+            ax.set_title(label)
+        else:
+            ax = img.plot(norm_to=args.norm, label=label)
         ax.figure.savefig(args.output, dpi=200, bbox_inches="tight")
         if args.npz:
             img.save(args.output.rsplit(".", 1)[0] + ".npz")

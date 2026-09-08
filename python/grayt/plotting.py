@@ -84,7 +84,7 @@ def plot_orbits_2d(orbits, black_hole=None, plane="xy", ax=None,
 
     if black_hole is not None:
         th = np.linspace(0, 2*np.pi, 200)
-        rh = black_hole.horizon
+        rh = black_hole.capture_radius
         ax.fill(rh*np.cos(th), rh*np.sin(th), facecolor="white",
                 edgecolor="black", lw=1.2, zorder=3)
     ax.set_aspect("equal")

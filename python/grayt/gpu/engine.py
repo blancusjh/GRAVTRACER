@@ -155,6 +155,8 @@ class Renderer:
             raise RuntimeError(
                 "the GPU backend needs pyopencl "
                 f"(pip install pyopencl): {_CL_ERROR}")
+        if spacetime.mid not in (1, 2):
+            raise ValueError("custom metrics require the CPU backend")
         if method != "rkdp45":
             raise ValueError("the GPU backend implements rkdp45 only; use "
                              "backend='cpu' for other integrators")

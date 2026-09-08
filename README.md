@@ -4,6 +4,36 @@ Relativistic ray tracing around compact objects: shadows, thin accretion
 disks, gravitational lensing, image formation, and orbit visualization
 in **Kerr** and **q-metric (Zipoy–Voorhees)** spacetimes.
 
+Now also supports **custom stationary axisymmetric metrics**, imported metric
+tables, independent emitting disks and stellar surfaces, a reference gray
+volume-transfer path, celestial image maps, and reproducible camera movies.
+Built-in additions include **Reissner–Nordström** and **spherical stellar
+exteriors**. See [custom models and scientific workflows](docs/custom_models.md)
+for the exact geometric assumptions, import formats, and accuracy checks.
+
+```python
+import grayt
+
+bh = grayt.BlackHole(a=0.8)
+image = grayt.render_scene(
+    bh, grayt.Camera(r=100, theta=70), grayt.PageThorneDisk(bh),
+    sky=grayt.CelestialSky.procedural(seed=42), exposure=5000)
+image.save("observation.npz")  # raw endpoints, radiation maps, JSON provenance
+```
+
+Generate 14 model panels and four MP4s (requires `ffmpeg` for videos):
+
+```sh
+PYTHONPATH=python python examples/model_gallery.py --output output/stationary_models
+PYTHONPATH=python python examples/volume_snapshot.py
+gravtracer render configs/celestial_kerr.yml -o output/celestial.png --npz
+```
+
+The new scene path uses the Fortran CPU integrator. Legacy GPU rendering and
+the historical `ThinDisk` convention remain available. `PageThorneDisk`
+adds consistent Keplerian motion and bolometric `g^4` transfer; imported
+volumes require radiation coefficients, not just raw GRMHD fluid variables.
+
 Born as a replication of *OSIRIS: A New Code for Ray Tracing Around
 Compact Objects* (Velásquez-Cadavid et al., arXiv:2202.00086,
 Eur. Phys. J. C) — every figure of the paper is reproduced by the
@@ -139,7 +169,8 @@ the same rule is used by the Fortran reference and OpenCL kernel.
 | Weak-field deflection (b = 50) | 4M/b + 15πM²/4b² to < 2% |
 | q-metric | q = 0 ≡ Schwarzschild to round-off; shadow scales with ADM mass 1+q |
 
-58 tests: `make test` (OpenCL cases skip when no device is available).
+Run the physics and regression tests with `make test` (OpenCL cases skip
+when no device is available).
 Example scripts (outputs go to git-ignored
 `output/`); defaults reproduce the paper's figures:
 
@@ -184,5 +215,8 @@ with the action plan and future-extension roadmap lives in
       shared Fortran adaptive-step/event machinery, input validation
 - [x] q-metric spacetime (Appendix A) + Fig. 14-style orbit physics
 - [x] Packaging: `uv pip install -e .` (meson-python), `gravtracer` CLI
-- [ ] Next: Keplerian/g⁴ disk toggles, physical (redshifted) photograph,
-      volumetric radiative transfer — see docs/REVIEW.md
+- [x] Custom stationary axisymmetric metric tables, Keplerian/g⁴ Page–Thorne
+      emission, custom disks and stellar surfaces, gray volume transfer
+- [x] Celestial maps, scientific archives, model gallery and camera movies
+- [ ] Next: frequency-resolved/polarized transfer, evolving geometries,
+      custom GPU metrics, and general physical photographs

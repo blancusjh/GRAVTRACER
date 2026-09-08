@@ -15,11 +15,13 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import _core
+from ._runtime import metric_context, metadata
 from .api import (render as _render, _method_id, STATUS_ESCAPED,
                   STATUS_CAPTURED)
 from .geometry import bl_to_cart, null_momentum
 from .instruments import Camera, Screen
 from .matter import ThinDisk, ImageSource
+from .emission import EmittingDisk
 from .results import Photograph, Ray
 from .spacetime import Spacetime, BlackHole, QMetric
 
@@ -31,8 +33,10 @@ class PhysicalSystem:
     """The physics: spacetime + objects living in it."""
 
     spacetime: Spacetime = field(default_factory=BlackHole)
-    disk: ThinDisk | None = None
+    disk: ThinDisk | EmittingDisk | None = None
     sources: list = field(default_factory=list)
+    sky: object = None
+    surface: object = None
 
     # Backward-compatible alias (earlier versions took black_hole=...)
     @property
@@ -51,6 +55,8 @@ class System:
     method: str = "rkdp45"
     rtol: float = 1e-9
     atol: float = 1e-11
+    exposure: float = 1.
+    escape_radius: float | None = None
 
     # ------------------------------------------------------ construction
 
@@ -64,15 +70,34 @@ class System:
           camera:     {r, theta, phi, x: [..], y: [..], resolution: [..]}
           disk:       {model, r_in (number or 'isco'), r_out, l0}
           integrator: {method, rtol, atol}
+
+        Additional types, sky maps and bolometric disks are documented in
+        docs/custom_models.md and configs/celestial_kerr.yml. Relative data
+        paths are resolved against the YAML file's directory.
         """
         import yaml
+        from pathlib import Path
+        from .metrics import ReissnerNordstrom, SphericalStar, TabulatedMetric
+        from .emission import PageThorneDisk, TabulatedDisk
+        from .sky import CelestialSky
+        base = Path(path).resolve().parent
         with open(path) as f:
             cfg = yaml.safe_load(f)
 
         if "spacetime" in cfg:
             sc = dict(cfg["spacetime"])
             kind = sc.pop("type", "kerr")
-            st = QMetric(**sc) if kind == "qmetric" else BlackHole(**sc)
+            constructors = {"kerr": BlackHole, "qmetric": QMetric,
+                            "reissner-nordstrom": ReissnerNordstrom,
+                            "spherical-star": SphericalStar}
+            if kind == "tabulated":
+                st = TabulatedMetric.load(base / sc.pop("path"))
+                if sc:
+                    raise ValueError(f"unknown tabulated-metric options: {list(sc)}")
+            elif kind in constructors:
+                st = constructors[kind](**sc)
+            else:
+                raise ValueError(f"unknown spacetime type: {kind}")
         else:
             st = BlackHole(**cfg.get("black_hole", {}))
 
@@ -87,14 +112,37 @@ class System:
             disk_cfg = dict(cfg["disk"])
             if disk_cfg.get("r_in") == "isco":
                 disk_cfg["r_in"] = None
-            disk = ThinDisk(**disk_cfg)
+            model = disk_cfg.get("model", "page-thorne")
+            if model == "page-thorne-bolometric":
+                disk_cfg.pop("model")
+                disk = PageThorneDisk(st, **disk_cfg)
+            elif model == "tabulated":
+                disk_cfg.pop("model")
+                disk = TabulatedDisk.load(base / disk_cfg.pop("path"))
+                if disk_cfg:
+                    raise ValueError(f"unknown tabulated-disk options: {list(disk_cfg)}")
+            else:
+                disk = ThinDisk(**disk_cfg)
+
+        sky = None
+        if cfg.get("sky") is not None:
+            sky_cfg = dict(cfg["sky"])
+            kind = sky_cfg.pop("type", "procedural")
+            if kind == "procedural":
+                sky = CelestialSky.procedural(**sky_cfg)
+            elif kind == "image":
+                sky = CelestialSky(base / sky_cfg.pop("path"), **sky_cfg)
+            else:
+                raise ValueError(f"unknown sky type: {kind}")
 
         integ = cfg.get("integrator", {})
-        return cls(physical=PhysicalSystem(spacetime=st, disk=disk),
+        return cls(physical=PhysicalSystem(spacetime=st, disk=disk, sky=sky),
                    cameras=[cam],
                    method=integ.get("method", "rkdp45"),
                    rtol=float(integ.get("rtol", 1e-8)),
-                   atol=float(integ.get("atol", 1e-10)))
+                   atol=float(integ.get("atol", 1e-10)),
+                   exposure=float(cfg.get("exposure", 1.)),
+                   escape_radius=cfg.get("escape_radius"))
 
     # ------------------------------------------------------- experiments
 
@@ -105,9 +153,14 @@ class System:
         kwargs.setdefault("method", self.method)
         kwargs.setdefault("rtol", self.rtol)
         kwargs.setdefault("atol", self.atol)
+        kwargs.setdefault("sky", self.physical.sky)
+        kwargs.setdefault("surface", self.physical.surface)
+        kwargs.setdefault("exposure", self.exposure)
+        kwargs.setdefault("escape_radius", self.escape_radius)
         return _render(self.physical.spacetime, cam, self.physical.disk,
                        **kwargs)
 
+    @metric_context
     def trace_ray(self, origin_cart, direction_cart, lambda_max=400.0,
                   keep=True):
         """Trace a single geodesic from a point along a direction and
@@ -127,6 +180,7 @@ class System:
             self.rays.append(ray)
         return ray
 
+    @metric_context
     def form_image(self, source: ImageSource | int = 0,
                    screen: Screen | int = 0, max_rays=40_000, r_max=None,
                    max_steps=100_000, keep_sample_rays=0):
@@ -175,6 +229,7 @@ class System:
         return {"n_rays": n_ray, "status_counts": counts,
                 "n_on_screen": n_binned}
 
+    @metric_context
     def photograph(self, camera: Camera, source: ImageSource | int = 0,
                    background=0.0, max_steps=200_000) -> Photograph:
         """Photograph a lambertian ``ImageSource`` through the spacetime.
@@ -238,7 +293,7 @@ class System:
         return Photograph(rgb=rgb.reshape(nx, ny, 3),
                           status=status.reshape(nx, ny),
                           extent=camera.extent,
-                          meta={"spacetime": dataclasses.asdict(st),
+                          meta={"spacetime": metadata(st),
                                 "camera": dataclasses.asdict(camera)})
 
     # ------------------------------------------------------ visualization
@@ -259,9 +314,9 @@ class System:
         rh = st.capture_radius
         ax.plot_surface(rh*np.cos(uu)*np.sin(vv), rh*np.sin(uu)*np.sin(vv),
                         rh*np.cos(vv), color="black", shade=False)
-        if self.physical.disk is not None and isinstance(st, BlackHole):
+        if self.physical.disk is not None:
             disk = self.physical.disk
-            r_in = disk.r_in if disk.r_in else st.isco
+            r_in = disk.r_in if disk.r_in is not None else st.isco
             rr, pp = np.meshgrid(np.linspace(r_in, disk.r_out, 12),
                                  np.linspace(0, 2*np.pi, 60))
             ax.plot_surface(rr*np.cos(pp), rr*np.sin(pp), 0.0*rr,

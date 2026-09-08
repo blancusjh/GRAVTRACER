@@ -16,14 +16,20 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from . import _core
+from ._runtime import metric_context, metadata
 from .spacetime import Spacetime, BlackHole, QMetric, MID_KERR
 from .instruments import Camera
 from .matter import ThinDisk
 from .results import Image, Trajectory
+
+if TYPE_CHECKING:
+    from .emission import EmittingDisk
+    from .scene import SceneImage
 
 _METHODS = {"rkdp45": 1, "rkck45": 2, "rkf45": 3}
 
@@ -41,13 +47,20 @@ def _method_id(name: str) -> int:
                          f"{', '.join(sorted(_METHODS))}") from None
 
 
-def render(spacetime: Spacetime, camera: Camera, disk: ThinDisk | None = None,
+@metric_context
+def render(spacetime: Spacetime, camera: Camera, disk: ThinDisk | EmittingDisk | None = None,
            method: str = "rkdp45", rtol: float = 1e-8, atol: float = 1e-10,
            max_steps: int = 500_000, constraint_monitor: bool = True,
-           backend: str = "cpu", **backend_kwargs) -> Image:
+           backend: str = "cpu", sky=None, surface=None, exposure=1.,
+           observer_time=0., escape_radius=None, **backend_kwargs) -> Image | SceneImage:
     """Trace every pixel of ``camera`` through ``spacetime``; if ``disk``
     is given, shade disk intersections with I_obs = g^3 * F_PageThorne
     (eq. 19 of arXiv:2202.00086). The disk model is Kerr-only.
+
+    A custom metric, EmittingDisk, sky, surface, or explicit escape_radius
+    selects render_scene and returns SceneImage with raw maps and display RGB.
+    That path is CPU-only; its new emitting models use bolometric g^4 transfer.
+    Legacy ThinDisk keeps its g^3 convention, including in RGB scenes.
 
     ``constraint_monitor=False`` skips the per-step Hamiltonian
     constraint evaluation (~10% faster; purely diagnostic — it never
@@ -58,6 +71,17 @@ def render(spacetime: Spacetime, camera: Camera, disk: ThinDisk | None = None,
     needs pyopencl; rkdp45 only). Extra keyword arguments
     (``precision``, ``device``) are forwarded to :func:`grayt.gpu.render`.
     """
+    from .emission import EmittingDisk
+    if (spacetime.mid == 3 or isinstance(disk, EmittingDisk) or sky is not None
+            or surface is not None or escape_radius is not None):
+        if backend != "cpu":
+            raise ValueError("custom metrics and emitting disks require backend=cpu")
+        from .scene import render_scene
+        return render_scene(spacetime, camera, disk, method=method, rtol=rtol,
+                            atol=atol, max_steps=max_steps, sky=sky, surface=surface,
+                            exposure=exposure, observer_time=observer_time,
+                            escape_radius=escape_radius, constraint_monitor=constraint_monitor,
+                            **backend_kwargs)
     if backend == "gpu":
         from . import gpu
         return gpu.render(spacetime, camera, disk, method=method,
@@ -96,7 +120,7 @@ def render(spacetime: Spacetime, camera: Camera, disk: ThinDisk | None = None,
     intens, gmap, rhit, status, herrm, thf, phf = (np.flip(m, axis=0)
                                                   for m in out)
 
-    meta = {"spacetime": dataclasses.asdict(spacetime),
+    meta = {"spacetime": metadata(spacetime),
             "camera": dataclasses.asdict(camera),
             "disk": dataclasses.asdict(disk) if disk else None,
             "method": method, "rtol": rtol, "atol": atol}
@@ -110,24 +134,39 @@ def shadow(spacetime: Spacetime, camera: Camera, **kwargs) -> Image:
     return render(spacetime, camera, disk=None, **kwargs)
 
 
+@metric_context
 def trace(spacetime: Spacetime, y0, p_t: float, p_phi: float,
           method: str = "rkdp45", rtol: float = 1e-10, atol: float = 1e-12,
           h0: float = 1.0, lambda_max: float = 1e4,
-          n_max: int = 100_000) -> Trajectory:
+          n_max: int = 100_000, max_step: float = 1e30,
+          escape_radius: float = -1., step_radius: float = 1e30) -> Trajectory:
     """Integrate a single geodesic (photon or massive particle) from raw
     initial conditions ``y0 = (t, r, theta, phi, p_r, p_theta)``
-    (angles in RADIANS here — raw phase-space coordinates)."""
+    (angles in RADIANS here — raw phase-space coordinates).
+
+    max_step caps affine steps inside step_radius. escape_radius > 0 stops
+    on the first accepted step beyond that sphere (without event refinement);
+    use trace_bundle for precisely refined image endpoints.
+    """
+    if max_step <= 0 or h0 == 0 or n_max < 1:
+        raise ValueError("require max_step > 0, nonzero h0 and n_max >= 1")
     traj, herr, nout = _core.raytracer.trace_geodesic(
         spacetime.mid, spacetime.par, np.asarray(y0, dtype=float), p_t,
-        p_phi, _method_id(method), rtol, atol, h0, lambda_max, n_max)
+        p_phi, _method_id(method), rtol, atol, h0, lambda_max, n_max,
+        hcap=max_step, rstop=escape_radius, rstep=step_radius)
     t = traj[:nout]
     return Trajectory(lam=t[:, 0], t=t[:, 1], r=t[:, 2], theta=t[:, 3],
                       phi=t[:, 4], p_r=t[:, 5], p_theta=t[:, 6],
                       herr=herr[:nout],
-                      meta={"spacetime": dataclasses.asdict(spacetime),
-                            "p_t": p_t, "p_phi": p_phi, "method": method})
+                      meta={"spacetime": metadata(spacetime),
+                            "p_t": p_t, "p_phi": p_phi, "method": method,
+                            "rtol": rtol, "atol": atol, "h0": h0,
+                            "lambda_max": lambda_max, "n_max": n_max,
+                            "max_step": max_step, "step_radius": step_radius,
+                            "escape_radius": escape_radius})
 
 
+@metric_context
 def camera_ray(spacetime: Spacetime, camera: Camera, x: float, y: float):
     """Initial conditions (y0, p_t, p_phi) for one image-plane point."""
     y0, pt, pphi = _core.raytracer.camera_init(
@@ -136,6 +175,7 @@ def camera_ray(spacetime: Spacetime, camera: Camera, x: float, y: float):
     return y0, float(pt), float(pphi)
 
 
+@metric_context
 def orbit_ic(spacetime: Spacetime, r0: float, energy: float,
              angular_momentum: float, mass: float = 1.0,
              theta0: float = 90.0, pr_sign: int = 0):
@@ -156,6 +196,7 @@ def orbit_ic(spacetime: Spacetime, r0: float, energy: float,
     return np.array([0.0, r0, th, 0.0, p_r, 0.0]), p_t, p_phi
 
 
+@metric_context
 def flux_profile(black_hole: BlackHole, r_out: float = 20.0, n: int = 2000):
     """Radial Page-Thorne flux profile on [r_isco, r_out] (Kerr only)."""
     if black_hole.mid != MID_KERR:

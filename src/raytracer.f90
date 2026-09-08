@@ -15,6 +15,7 @@ MODULE RAYTRACER
    !   1 = captured at the inner boundary (horizon / singular surface)
    !   2 = hit the target surface (disk or plane)
    !   3 = integration failed or step budget exhausted
+   USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
    USE KIND_PARAMS, ONLY: WP, PI, HALF_PI
    USE KERR_METRIC, ONLY: HORIZON_RADIUS, ISCO_RADIUS
    USE SPACETIME, ONLY: METRIC_COV, INNER_BOUNDARY, MID_KERR
@@ -27,7 +28,7 @@ MODULE RAYTRACER
 
    PUBLIC :: CAMERA_INIT, TRACE_RAY, RENDER_IMAGE, TRACE_GEODESIC
    PUBLIC :: TRACE_TO_PLANE, TRACE_BUNDLE_TO_PLANE
-   PUBLIC :: GET_HORIZON, GET_ISCO
+   PUBLIC :: GET_HORIZON, GET_ISCO, RENDER_GEOMETRY
 
    REAL(WP), PARAMETER :: HMIN = 1.0E-12_WP
    REAL(WP), PARAMETER :: HMAX_NEAR = 25.0_WP
@@ -93,6 +94,11 @@ CONTAINS
             K1_VALID = .TRUE.   ! KS(:, 1) = f(Y) holds for retries at this Y
          ELSE
             CALL RK_EMBEDDED_STEP(METHOD, MID, PAR, PT, PPHI, Y, H, Y1, EV)
+         END IF
+         IF (.NOT. ALL(IEEE_IS_FINITE(Y1)) .OR. .NOT. ALL(IEEE_IS_FINITE(EV))) THEN
+            H = H*0.2_WP
+            IF (ABS(H) < HMIN) RETURN
+            CYCLE
          END IF
          SC = ATOL + RTOL*MAX(ABS(Y), ABS(Y1))
          ERR = SQRT(SUM((EV/SC)**2)/6.0_WP)
@@ -267,7 +273,9 @@ CONTAINS
 
          IF (Y1(2) <= RCAP .OR. Y1(2) <= 0.0_WP) THEN
             STATUS = 1
-            YOUT = Y1
+            EPAR = (/RCAP, 0.0_WP, 0.0_WP, 0.0_WP/)
+            CALL REFINE_EVENT(METHOD, MID, PAR, PT, PPHI, Y, HUSED, &
+                              EVENT_SPHERE, EPAR, Y1, KS, YOUT)
             RETURN
          END IF
          IF (Y1(2) >= R_ESC) THEN
@@ -367,7 +375,7 @@ CONTAINS
    END SUBROUTINE TRACE_BUNDLE_TO_PLANE
 
    SUBROUTINE TRACE_GEODESIC(MID, PAR, Y0, PT, PPHI, METHOD, RTOL, ATOL, &
-                             H0, LAM_MAX, NMAX, TRAJ, HERR, NOUT)
+                             H0, LAM_MAX, NMAX, TRAJ, HERR, NOUT, HCAP, RSTOP, RSTEP)
       ! Integrate a single geodesic (photon or massive particle) from
       ! raw initial conditions, recording the trajectory and |H| at
       ! every accepted step. TRAJ(K, :) = (lambda, t, r, theta, phi,
@@ -375,15 +383,25 @@ CONTAINS
       INTEGER, INTENT(IN)   :: MID, METHOD, NMAX
       REAL(WP), INTENT(IN)  :: PAR(4), Y0(6), PT, PPHI, RTOL, ATOL
       REAL(WP), INTENT(IN)  :: H0, LAM_MAX
+      REAL(WP), OPTIONAL, INTENT(IN) :: HCAP, RSTOP, RSTEP
+!F2PY REAL(WP) OPTIONAL, INTENT(IN) :: HCAP = 1.0E30
+!F2PY REAL(WP) OPTIONAL, INTENT(IN) :: RSTOP = -1.0
+!F2PY REAL(WP) OPTIONAL, INTENT(IN) :: RSTEP = 1.0E30
       REAL(WP), INTENT(OUT) :: TRAJ(NMAX, 7), HERR(NMAX)
       INTEGER, INTENT(OUT)  :: NOUT
-      REAL(WP) :: Y(6), Y1(6), H, HUSED, LAM, RCAP, KS(6, 7)
+      REAL(WP) :: Y(6), Y1(6), H, HUSED, LAM, RCAP, KS(6, 7), CAP, STOPR, STEPR
       LOGICAL :: OK, K1V
 
       RCAP = INNER_BOUNDARY(MID, PAR) + CAPTURE_BUFFER
       Y = Y0
       H = H0
       LAM = 0.0_WP
+      CAP = 1.0E30_WP
+      STOPR = -1.0_WP
+      STEPR = 1.0E30_WP
+      IF (PRESENT(HCAP)) CAP = HCAP
+      IF (PRESENT(RSTOP)) STOPR = RSTOP
+      IF (PRESENT(RSTEP)) STEPR = RSTEP
       NOUT = 0
       TRAJ = 0.0_WP
       HERR = 0.0_WP
@@ -392,6 +410,8 @@ CONTAINS
       DO
          IF (NOUT >= NMAX) EXIT
          IF (ABS(LAM) >= ABS(LAM_MAX)) EXIT
+         H = SIGN(MIN(ABS(H), ABS(LAM_MAX)-ABS(LAM)), H)
+         IF (Y(2) <= STEPR) H = SIGN(MIN(ABS(H),CAP),H)
          CALL ADVANCE_ADAPTIVE(METHOD, MID, PAR, PT, PPHI, RTOL, ATOL, &
                                Y, H, Y1, HUSED, OK, KS, K1V)
          IF (.NOT. OK) EXIT
@@ -405,6 +425,7 @@ CONTAINS
          HERR(NOUT) = ABS(HAMILTONIAN_CONSTRAINT(MID, PAR, PT, PPHI, Y))
 
          IF (Y(2) <= RCAP) EXIT
+         IF (STOPR > 0 .AND. Y(2) >= STOPR) EXIT
       END DO
    END SUBROUTINE TRACE_GEODESIC
 
@@ -477,5 +498,35 @@ CONTAINS
       END DO
       !$OMP END PARALLEL DO
    END SUBROUTINE RENDER_IMAGE
+
+   SUBROUTINE RENDER_GEOMETRY(MID, PAR, R0, TH0, PH0, XS, YS, NX, NY, &
+                              METHOD, RTOL, ATOL, R_ESCAPE, DISK_ON, &
+                              RIN, ROUT, MAXSTEP, ENDPOINT, MOMENTA, STATUS, HERR, ERRMON)
+      ! Geometry only: no Kerr ISCO, flux, velocity or radiation assumptions.
+      ! ENDPOINT = (t,r,theta,phi,p_r,p_theta); MOMENTA = (p_t,p_phi).
+      INTEGER, INTENT(IN) :: MID, NX, NY, METHOD, DISK_ON, MAXSTEP
+      INTEGER, INTENT(IN), OPTIONAL :: ERRMON
+!F2PY INTEGER OPTIONAL, INTENT(IN) :: ERRMON = 1
+      REAL(WP), INTENT(IN) :: PAR(4), R0, TH0, PH0, XS(NX), YS(NY)
+      REAL(WP), INTENT(IN) :: RTOL, ATOL, R_ESCAPE, RIN, ROUT
+      REAL(WP), INTENT(OUT) :: ENDPOINT(6,NX,NY), MOMENTA(2,NX,NY), HERR(NX,NY)
+      INTEGER, INTENT(OUT) :: STATUS(NX,NY)
+      REAL(WP) :: Y0(6), PT, PPHI
+      INTEGER :: I, J, NS, MONITOR
+      MONITOR = 1
+      IF (PRESENT(ERRMON)) MONITOR = ERRMON
+      !$OMP PARALLEL DO COLLAPSE(2) SCHEDULE(DYNAMIC,4) DEFAULT(SHARED) &
+      !$OMP PRIVATE(I,J,Y0,PT,PPHI,NS)
+      DO J = 1, NY
+         DO I = 1, NX
+            CALL CAMERA_INIT(MID, PAR, R0, TH0, PH0, -XS(I), YS(J), Y0, PT, PPHI)
+            MOMENTA(:,I,J) = (/PT,PPHI/)
+            CALL TRACE_RAY(MID, PAR, PT, PPHI, Y0, METHOD, RTOL, ATOL, &
+                           R_ESCAPE, DISK_ON, RIN, ROUT, MAXSTEP, MONITOR, &
+                           STATUS(I,J), ENDPOINT(:,I,J), HERR(I,J), NS)
+         END DO
+      END DO
+      !$OMP END PARALLEL DO
+   END SUBROUTINE RENDER_GEOMETRY
 
 END MODULE RAYTRACER

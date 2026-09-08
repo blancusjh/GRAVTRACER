@@ -138,6 +138,17 @@ reference; the GPU backend implements the `rkdp45` integrator only.
 
 ### Interactive viewer
 
+For a browser view of the lensed disk and celestial sky, the generated model
+gallery can embed an offline observer renderer:
+
+```sh
+PYTHONPATH=python python examples/observer_gallery.py --output output/stationary_models
+```
+
+Open `output/stationary_models/index.html`, then drag the image to orbit and
+scroll to zoom. See [custom models](docs/custom_models.md#gallery-videos-and-cli)
+for supported browser presets, numerical validation, and antialiased movies.
+
 The optional VisPy viewer turns the GPU renderer into a live observer view:
 
 ```python

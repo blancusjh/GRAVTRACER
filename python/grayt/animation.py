@@ -4,11 +4,12 @@ No frames are normalized individually: fixed exposure avoids artificial
 brightness flicker. Scientific keyframes can be saved alongside the video.
 """
 
-from dataclasses import replace
-from pathlib import Path
 import json
 import shutil
 import subprocess
+from dataclasses import replace
+from pathlib import Path
+
 import numpy as np
 
 
@@ -118,6 +119,7 @@ def render_movie(
     sky=None,
     fps=24,
     exposure=1.0,
+    supersampling=1,
     archive_every=0,
     coordinate_time_step=0.0,
     progress=None,
@@ -126,10 +128,15 @@ def render_movie(
     """Render views, video, JSON manifest, and optional raw NPZ keyframes.
 
     Playback fps is independent of coordinate_time_step (in GM/c^3). By
-    default every view samples the same observer coordinate time.
+    default every view samples the same observer coordinate time. With
+    supersampling=N, trace N*N subpixels and average their display RGB.
+    Saved scientific keyframes retain every subray; categories, momenta,
+    and endpoints are never averaged across an occultation boundary.
     """
     from .scene import render_scene
 
+    if not isinstance(supersampling, (int, np.integer)) or supersampling < 1:
+        raise ValueError("supersampling must be a positive integer")
     cameras = list(cameras)
     if not np.isfinite(coordinate_time_step) or archive_every < 0:
         raise ValueError("require finite coordinate_time_step and archive_every >= 0")
@@ -139,9 +146,12 @@ def render_movie(
     records = []
     with VideoWriter(path, cameras[0].resolution, fps) as writer:
         for i, camera in enumerate(cameras):
+            traced_camera = replace(
+                camera, resolution=tuple(n * supersampling for n in camera.resolution)
+            )
             img = render_scene(
                 spacetime,
-                camera,
+                traced_camera,
                 disk,
                 surface=surface,
                 sky=sky,
@@ -149,9 +159,7 @@ def render_movie(
                 observer_time=i * coordinate_time_step,
                 **trace_options,
             )
-            rgb = np.round(
-                np.clip(img.rgb.transpose(1, 0, 2)[::-1], 0, 1) * 255
-            ).astype(np.uint8)
+            rgb = display_frame(img.rgb, supersampling)
             writer.write(rgb)
             records.append(
                 {
@@ -170,6 +178,9 @@ def render_movie(
         json.dumps(
             {
                 "fps": fps,
+                "display_resolution": list(cameras[0].resolution),
+                "supersampling": int(supersampling),
+                "pixel_filter": "box average of display RGB; raw subrays preserved",
                 "coordinate_time_step": coordinate_time_step,
                 "frames": records,
             },
@@ -178,3 +189,24 @@ def render_movie(
         + "\n"
     )
     return path
+
+
+def display_frame(rgb, supersampling=1):
+    """Convert (nx,ny,3) display colors to a top-down uint8 video frame.
+
+    This averages visualization colors, not calibrated spectral radiance.
+    Opaque geometry remains opaque for each subray.
+    """
+    if not isinstance(supersampling, (int, np.integer)) or supersampling < 1:
+        raise ValueError("supersampling must be a positive integer")
+    rgb = np.asarray(rgb)
+    if rgb.ndim != 3 or rgb.shape[-1] != 3:
+        raise ValueError("RGB must have shape (nx,ny,3)")
+    nx, ny, _ = rgb.shape
+    if nx % supersampling or ny % supersampling:
+        raise ValueError("RGB dimensions must be divisible by supersampling")
+    if supersampling > 1:
+        rgb = rgb.reshape(
+            nx // supersampling, supersampling, ny // supersampling, supersampling, 3
+        ).mean(axis=(1, 3))
+    return np.round(np.clip(rgb.transpose(1, 0, 2)[::-1], 0, 1) * 255).astype(np.uint8)

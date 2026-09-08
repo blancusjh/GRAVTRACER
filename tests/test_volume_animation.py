@@ -102,8 +102,15 @@ def test_video_export_and_manifest(tmp_path):
     cam = grayt.Camera(r=30, theta=60, resolution=(16, 12), x=(-8, 8), y=(-6, 6))
     path = tmp_path / "orbit.mp4"
     grayt.render_movie(
-        path, grayt.BlackHole(0), [cam, replace(cam, phi=30)], archive_every=1
+        path, grayt.BlackHole(0), [cam, replace(cam, phi=30)], archive_every=1,
+        supersampling=2,
     )
     assert path.stat().st_size > 500
     assert path.with_suffix(".json").exists()
     assert (tmp_path / "orbit_0000.npz").exists()
+    raw = grayt.SceneImage.load(tmp_path / "orbit_0000.npz")
+    assert raw.status.shape == (32, 24)  # preserve the individual subrays
+    import json
+    manifest = json.loads(path.with_suffix(".json").read_text())
+    assert manifest["display_resolution"] == [16, 12]
+    assert manifest["supersampling"] == 2

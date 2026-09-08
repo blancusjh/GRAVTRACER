@@ -1,0 +1,21 @@
+#observer-view{margin:32px 0 48px;background:#0d1420;border:1px solid #29384c;border-radius:14px;padding:24px}
+#observer-view h2{font-size:28px;margin:0 0 10px}
+#observer-view .observer-toolbar{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:16px 0}
+#observer-view button,#observer-view select{font:inherit;background:#1a293c;color:#e8eff9;border:1px solid #425974;border-radius:7px;padding:8px 12px;max-width:100%}
+#observer-view button{cursor:pointer}
+#observer-view button:hover{background:#2a405b}
+#observer-view :focus-visible{outline:2px solid #94d5ff;outline-offset:3px}
+#observer-view label{display:flex;gap:10px;align-items:center;flex-wrap:wrap;min-width:0}
+#observer-view input[type=range]{accent-color:#89c9fa;min-width:80px;max-width:100%}
+#observer-view .observer-sliders{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+#observer-view .observer-sliders label{display:grid;grid-template-columns:90px minmax(60px,1fr) 50px}
+#observer-view .observer-viewport{position:relative;background:#000;border-radius:9px;overflow:hidden;aspect-ratio:8/5}
+#observer-canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+#observer-canvas:active{cursor:grabbing}
+#observer-poster{position:absolute;inset:0;pointer-events:none;height:100%;object-fit:contain;border-radius:0}
+#observer-position{position:absolute;top:12px;left:12px;background:#060b13bb;color:#dae5f4;font-size:13px;border-radius:5px;padding:4px 9px;pointer-events:none}
+#observer-status{font-size:14px;min-height:24px;margin:8px 0}
+#observer-view details{color:#b9c5d6;font-size:14px;margin-top:15px}
+#observer-view summary{cursor:pointer}
+#observer-view .observer-note{font-size:14px;margin:10px 0}
+@media(max-width:650px){#observer-view{padding:14px}#observer-view h2{font-size:24px}#observer-view .observer-sliders{grid-template-columns:1fr}#observer-view .observer-toolbar{gap:9px}#observer-view button{font-size:14px;padding:7px 10px}#observer-view .observer-toolbar>label{width:100%}#observer-view select{width:100%;min-width:0}#observer-position{font-size:11px;top:6px;left:6px}}

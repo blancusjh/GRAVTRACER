@@ -85,6 +85,17 @@ py.install_sources(
 
 py.install_sources(
   [
+    'python/grayt/web/metrics.js',
+    'python/grayt/web/geodesics.js',
+    'python/grayt/web/worker.js',
+    'python/grayt/web/observer.js',
+    'python/grayt/web/observer.css',
+  ],
+  subdir: 'grayt/web',
+)
+
+py.install_sources(
+  [
     'python/grayt/gpu/__init__.py',
     'python/grayt/gpu/engine.py',
     'python/grayt/gpu/kernel.cl',

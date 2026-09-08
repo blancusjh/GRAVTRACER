@@ -32,6 +32,36 @@ def build_index(output):
         if interactive_path.exists()
         else ""
     )
+    observer_path = output / "observer_view.html"
+    observer = (
+        observer_path.read_text(encoding="utf-8") if observer_path.exists() else ""
+    )
+    if observer and interactive:
+        # Coordinate plots are supplementary. Load their WebGL runtime only
+        # when expanded, leaving the observer responsive on page startup.
+        coordinates = (
+            '<!doctype html><html lang="en"><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            "<style>body{margin:0;background:#090d16;color:#dce4ef;font:16px/1.6 system-ui}"
+            ".interactive-plot{margin:18px 0;border-radius:12px;overflow:hidden}</style>"
+            + interactive
+            + "</html>"
+        )
+        payload = json.dumps(coordinates).replace("</", "<\\/")
+        interactive = (
+            '<details id="coordinate-diagrams"><summary>Coordinate diagrams and 3D emissivity</summary>'
+            '<div id="coordinate-host"></div></details>'
+            '<script id="coordinate-payload" type="application/json">'
+            + payload
+            + "</script>"
+            '<script>document.getElementById("coordinate-diagrams").addEventListener("toggle",function(){'
+            'if(!this.open||this.dataset.loaded)return;this.dataset.loaded="true";'
+            'const frame=document.createElement("iframe");frame.title="Coordinate diagrams";'
+            'frame.style="width:100%;height:1500px;border:0";'
+            'frame.srcdoc=JSON.parse(document.getElementById("coordinate-payload").textContent);'
+            'frame.addEventListener("load",()=>{frame.style.height=frame.contentDocument.documentElement.scrollHeight+"px";});'
+            'document.getElementById("coordinate-host").append(frame);});</script>'
+        )
     records = json.loads((output / "manifest.json").read_text())
     cards = []
     for row in records:
@@ -39,7 +69,13 @@ def build_index(output):
         cards.append(
             f'<article><h2>{title}</h2><a href="{name}.png">'
             f'<img loading="lazy" src="{name}.png" alt="{title}"></a>'
-            f'<p>{html.escape(row["note"])}</p><a href="{name}.npz">Raw ray and radiation maps</a></article>'
+            f'<p>{html.escape(row["note"])}</p><a href="{name}.npz">Raw ray and radiation maps</a>'
+            + (
+                f' · <a href="#observer-view" data-observer-name="{name}">Move observer</a>'
+                if observer
+                else ""
+            )
+            + "</article>"
         )
     for movie in sorted(output.glob("*.mp4")):
         title = html.escape(movie.stem.replace("_", " "))
@@ -65,6 +101,7 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1
 p{color:#b9c5d6}.intro{max-width:960px;margin-bottom:32px}
 .interactive-section{margin:32px 0 48px}.interactive-section>h2{font-size:28px}
 .interactive-plot{background:#0d1420;border:1px solid #29384c;border-radius:12px;overflow:hidden;margin:18px 0}
+#coordinate-diagrams{margin:24px 0 40px}#coordinate-diagrams>summary{cursor:pointer;font-size:20px}
 </style>
 <h1>Stationary spacetimes and light</h1><div class="intro">
 <p>Kerr Page–Thorne disks, spherical stellar surfaces, and theoretical charged/quadrupolar comparisons.
@@ -74,6 +111,7 @@ The volume example imports prescribed gray radiation coefficients, not a GRMHD s
 <p><a href="gallery.png">Full comparison sheet</a> · <a href="manifest.json">Scientific manifest</a> ·
 <a href="celestial_map.png">Celestial map</a> · <a href="metric_convergence.json">Convergence measurements</a></p>
 </div>"""
+        + observer
         + interactive
         + "<main>"
         + "\n".join(cards)

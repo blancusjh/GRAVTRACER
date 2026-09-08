@@ -284,7 +284,7 @@ def write_interactive_views(output):
         views.append(("volume-view", volume_view(output / "radiation_snapshot.npz")))
     chunks = [
         """<section id="interactive-views" class="interactive-section">
-<h2>Explore in 3D</h2>
+<h2>Coordinate diagrams</h2>
 <p>Drag to rotate · scroll or pinch to zoom · use the toolbar to pan or reset.
 Choose a metric from the menu and click legend entries to show or hide layers.</p>
 <p>These are coordinate views of computed vacuum geodesics. The translucent disk is a geometric reference;

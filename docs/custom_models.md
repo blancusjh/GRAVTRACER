@@ -261,7 +261,69 @@ parameters and raw keyframes accompany the videos. `--quick` reduces image
 size and frame count; `--skip-videos` produces only stills.
 The generated `index.html` provides a local browser for all artifacts.
 
-Embed interactive 3D views into that same page with:
+Embed interactive **rendered observer views** into that same page with:
+
+```sh
+PYTHONPATH=python python examples/observer_gallery.py --output output/stationary_models
+```
+
+Drag the rendered disk/sky image to change the observer's inclination and
+azimuth; scroll to change the field of view. Model selection, sliders,
+automatic azimuth rotation, PNG export, keyboard controls, and display
+exposure are available. Each model card links to its observer view. The
+default is the Schwarzschild disk at 85 degrees. The viewer works directly
+from `file://`, with embedded JavaScript, sky texture, and flux tables, and
+does not need a running Python server, OpenCL, or an internet connection.
+
+Web Workers integrate float64 Hamiltonian null geodesics with RKDP45 and
+dense event location. Preview/refined tolerances are 1e-6/1e-8 (absolute
+tolerance is 1/100 of relative tolerance). Kerr and q-metric expressions
+are generated from the existing OpenCL source by
+`examples/build_browser_metrics.py`; browser parity tests compare complete
+rays and bolometric emission against Fortran. RN and stellar exteriors use
+their analytic formulas in the browser. The Python reference renderer uses
+the imported metric tables for these examples. Arbitrary metric tables and
+volume radiation transfer remain Python workflows.
+
+At fixed observer radius, inclination and field of view, axial symmetry
+allows ray reuse: add the azimuth offset to endpoint phi and reevaluate the
+sky or surface pattern. Inclination and field-of-view changes retrace the
+rays; no viewpoint interpolation or image morphing is used. Refinement
+averages four subray display colors per output pixel. These browser images
+are visualizations; the gallery's NPZ archives retain the scientific maps.
+
+`examples/validate_observer_gallery.py` exercises the controls, PNG export,
+optional coordinate diagrams, and mobile layout with Playwright in offline
+mode. It writes screenshots and `observer_validation.json`. Install
+Playwright and its Chromium browser, or pass `--chrome /path/to/Chrome` to
+use an existing installation. The physics comparisons are in
+`tests/test_browser_observer.py` and require Node for JavaScript execution.
+
+The disk/sky edge is intentionally an occultation boundary: the example
+disk is an opaque, zero-thickness annulus cut off at r=20 M. Adjacent rays
+may terminate on the disk or reach the sky. The smooth axisymmetric disk
+does not reveal azimuthal camera motion through moving emission features,
+whereas background stars do move. Disk false colors and sky RGB have no
+common calibrated spectrum. A physical atmosphere or gradual optical-depth
+transition requires an appropriate radiation model, rather than blending
+background light through an opaque disk.
+
+For a slower Kerr movie with reduced spatial aliasing:
+
+```sh
+OMP_NUM_THREADS=8 PYTHONPATH=python python examples/refine_kerr_movie.py \
+  --output output/stationary_models --frames 360 --fps 30 --samples 2
+```
+
+This replaces the four-second preview with a 12-second orbit, changing
+azimuth by one degree per frame and using four rays per displayed pixel.
+It reuses axial symmetry only for stationary Kerr with an axisymmetric
+Page–Thorne disk. Frame metadata and full subray keyframes accompany the
+movie. `render_movie(..., supersampling=2)` enables the same pixel filter
+for other models, with full retracing at every camera. RGB is averaged
+after display tone mapping; this is not a calibrated detector response.
+
+Add supplementary interactive coordinate diagrams with:
 
 ```sh
 uv pip install '.[interactive]'
@@ -274,7 +336,8 @@ from `radiation_snapshot.npz` when that snapshot is present. These are
 coordinate visualizations; the displayed vacuum rays continue through the
 reference disk plane. The HTML embeds Plotly and the plotted data, so opening
 `index.html` via `file://` works without a server or an internet connection.
-Rebuilding the gallery index preserves the generated interactive section.
+With an observer viewer present, the diagrams load when their disclosure
+is expanded. Rebuilding the gallery index preserves both interactive sections.
 The plotted datasets are also exported as `geodesic-view.json` and
 `volume-view.json`.
 

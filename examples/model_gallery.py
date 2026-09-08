@@ -36,6 +36,14 @@ def build_index(output):
     observer = (
         observer_path.read_text(encoding="utf-8") if observer_path.exists() else ""
     )
+    native = (output / "desktop_launcher.json").exists()
+    if native and observer:
+        observer = """<p>Use <strong>Open desktop viewer</strong> on an example to open its native window.
+Press <strong>B</strong> for black → celestial map → grid. The browser may ask to open GRAVTRACER Viewer.</p>
+<details id="browser-preview"><summary>Optional browser preview (CPU)</summary>
+<iframe title="CPU browser preview" style="width:100%;height:1300px;border:0"></iframe></details>
+<script>document.getElementById('browser-preview').addEventListener('toggle',function(){
+if(this.open&&!this.dataset.loaded){this.dataset.loaded='true';this.querySelector('iframe').src='observer_preview.html';}});</script>"""
     if observer and interactive:
         # Coordinate plots are supplementary. Load their WebGL runtime only
         # when expanded, leaving the observer responsive on page startup.
@@ -71,8 +79,15 @@ def build_index(output):
             f'<img loading="lazy" src="{name}.png" alt="{title}"></a>'
             f'<p>{html.escape(row["note"])}</p><a href="{name}.npz">Raw ray and radiation maps</a>'
             + (
+                f'<p><a class="desktop-launch" href="gravtracer://view/{name}">Open desktop viewer'
+                + (" (GPU)" if name.startswith(("kerr_", "quadrupole_")) else " (CPU)")
+                + "</a></p>"
+                if native
+                else ""
+            )
+            + (
                 f' · <a href="#observer-view" data-observer-name="{name}">Move observer</a>'
-                if observer
+                if observer and not native
                 else ""
             )
             + "</article>"
@@ -81,7 +96,19 @@ def build_index(output):
         title = html.escape(movie.stem.replace("_", " "))
         cards.append(
             f'<article><h2>{title}</h2><video controls loop preload="metadata" src="{movie.name}"></video>'
-            f'<p><a href="{movie.with_suffix(".json").name}">Parameters and camera sequence</a></p></article>'
+            f'<p><a href="{movie.with_suffix(".json").name}">Parameters and camera sequence</a></p>'
+            + (
+                f'<p><a class="desktop-launch" href="gravtracer://view/{movie.stem}">Open desktop viewer</a></p>'
+                if native
+                and movie.stem
+                in (
+                    "kerr_camera_orbit",
+                    "stellar_camera_orbit",
+                    "quadrupole_camera_orbit",
+                )
+                else ""
+            )
+            + "</article>"
         )
     for name, title in [
         ("volume_torus", "Prescribed 3D gray radiation field"),
@@ -102,6 +129,8 @@ p{color:#b9c5d6}.intro{max-width:960px;margin-bottom:32px}
 .interactive-section{margin:32px 0 48px}.interactive-section>h2{font-size:28px}
 .interactive-plot{background:#0d1420;border:1px solid #29384c;border-radius:12px;overflow:hidden;margin:18px 0}
 #coordinate-diagrams{margin:24px 0 40px}#coordinate-diagrams>summary{cursor:pointer;font-size:20px}
+.desktop-launch{display:inline-block;padding:8px 14px;background:#243b53;border:1px solid #557b9c;border-radius:7px;text-decoration:none}
+#browser-preview{margin:24px 0}summary{cursor:pointer}
 </style>
 <h1>Stationary spacetimes and light</h1><div class="intro">
 <p>Kerr Page–Thorne disks, spherical stellar surfaces, and theoretical charged/quadrupolar comparisons.

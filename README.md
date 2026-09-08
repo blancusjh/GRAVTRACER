@@ -138,6 +138,18 @@ reference; the GPU backend implements the `rkdp45` integrator only.
 
 ### Interactive viewer
 
+On macOS, register native-window links in the gallery with:
+
+```sh
+PYTHONPATH=python python examples/install_desktop_launcher.py
+PYTHONPATH=python python examples/observer_gallery.py --output output/stationary_models
+```
+
+Each example then has an **Open desktop viewer** link. Native backgrounds
+start black; press **B** to cycle **black → celestial map → diagnostic grid**.
+Kerr and q-metric windows use OpenCL; imported-metric and stellar windows
+are labeled CPU. The optional browser preview loads only when expanded.
+
 For a browser view of the lensed disk and celestial sky, the generated model
 gallery can embed an offline observer renderer:
 

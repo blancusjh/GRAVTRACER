@@ -150,7 +150,8 @@ class Renderer:
                  method: str = "rkdp45", rtol: float = 1e-8,
                  atol: float = 1e-10, max_steps: int = 500_000,
                  constraint_monitor: bool = False,
-                 precision: str = "auto", device: int | None = None):
+                 precision: str = "auto", device: int | None = None,
+                 escape_radius: float | None = None):
         if cl is None:
             raise RuntimeError(
                 "the GPU backend needs pyopencl "
@@ -207,6 +208,7 @@ class Renderer:
         self.real = np.float64 if self.fp64 else np.float32
 
         self._disk_on = 1 if disk is not None else 0
+        self.escape_radius = escape_radius
         self._rout = disk.r_out if disk is not None else 20.0
         self._l0 = disk.l0 if disk is not None else 0.0
         self._rin = -1.0 if (disk is None or disk.r_in is None) else disk.r_in
@@ -264,7 +266,9 @@ class Renderer:
         nx, ny = self.resolution
         queue = self._eng.queue
         R, I = self.real, np.int32
-        r_esc = 1.1*camera.r
+        r_esc = 1.1*camera.r if self.escape_radius is None else float(self.escape_radius)
+        if not np.isfinite(r_esc) or r_esc <= camera.r:
+            raise ValueError("escape radius must be finite and outside the camera")
 
         # Row slabs keep each enqueue short (Apple/Windows GPU watchdogs
         # kill kernels that hog the device for seconds).  The camera x-axis
@@ -312,6 +316,7 @@ class Renderer:
             "backend": "gpu", "device": self.device_name,
             "device_index": self.device_index, "precision": self.precision,
             "persistent_renderer": True,
+            "escape_radius": r_esc,
         }
         return Image(intensity=intens, g=gmap, r_hit=rhit,
                      status=status.astype(np.int32), herr=herrm,

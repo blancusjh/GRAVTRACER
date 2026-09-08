@@ -261,7 +261,25 @@ parameters and raw keyframes accompany the videos. `--quick` reduces image
 size and frame count; `--skip-videos` produces only stills.
 The generated `index.html` provides a local browser for all artifacts.
 
-Embed interactive **rendered observer views** into that same page with:
+The gallery supports native desktop windows and optional rendered browser views.
+
+For native desktop windows on macOS, first run
+`PYTHONPATH=python python examples/install_desktop_launcher.py` from the
+repository, using the environment containing the viewer dependencies.
+This registers `gravtracer://view/<preset>` with a local application in
+`output/GRAVTRACER Viewer.app`. Then regenerate the page using the command
+below. The gallery opens each selected example in a separate native window;
+the browser may ask to open the registered application. No server is needed.
+Re-run installation after moving the repository or Python environment.
+
+Native windows start on black. **B** cycles black, the same seeded celestial
+map used in the gallery, and the original colored diagnostic grid. Background
+changes recolor cached rays without retracing. Kerr Page–Thorne views use
+OpenCL geometry with Keplerian bolometric g^4 emission and the same escape
+sphere as the gallery. q-metric views also use OpenCL. Imported metric and
+stellar views use the CPU scene renderer, labeled in the gallery and window.
+With the launcher installed, the CPU browser preview is collapsed and only
+starts when expanded. Launch errors are logged in `output/desktop_viewer.log`.
 
 ```sh
 PYTHONPATH=python python examples/observer_gallery.py --output output/stationary_models

@@ -166,6 +166,13 @@ comparisons. Imported metric tables and volume transfer use the Python renderer.
         + "</script>"
     )
     (output / "observer_view.html").write_text(page)
+    (output / "observer_preview.html").write_text(
+        '<!doctype html><html lang="en"><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        "<style>body{margin:0;background:#090d16;color:#dce4ef;font:16px/1.6 system-ui}a{color:#8fcaff}</style>"
+        + page
+        + "</html>"
+    )
     (output / "observer_models.json").write_text(
         json.dumps(config["models"], indent=2) + "\n"
     )

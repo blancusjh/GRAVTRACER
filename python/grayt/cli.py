@@ -78,6 +78,9 @@ def _main(argv=None):
                         help="OpenCL device index (see grayt.gpu.devices())")
     p_view.add_argument("--gui-backend", default=None,
                         help="VisPy GUI backend (default: auto; pyside6 recommended)")
+    p_view.add_argument("--background", choices=("black", "celestial", "grid"), default="black",
+                        help="initial background; B cycles black, celestial, grid")
+    p_view.add_argument("--sky", help="optional equirectangular celestial map image")
 
     args = parser.parse_args(argv)
 
@@ -132,9 +135,11 @@ def _main(argv=None):
             y=(-args.fov[1], args.fov[1]), resolution=tuple(args.res))
         disk = None if args.no_disk else ThinDisk(
             r_out=args.disk_out, l0=args.l0)
+        from .sky import CelestialSky
+        sky = CelestialSky(args.sky) if args.sky else None
         view(bh, disk, cam, preview_resolution=tuple(args.preview_res),
              mode=args.mode, precision=args.precision, device=args.device,
-             backend=args.gui_backend)
+             backend=args.gui_backend, background=args.background, sky=sky)
         return 0
 
     print(f"wrote {args.output} in {time.time() - t0:.1f}s", file=sys.stderr)

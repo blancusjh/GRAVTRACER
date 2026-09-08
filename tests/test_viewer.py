@@ -1,4 +1,5 @@
 """Headless tests for viewer state and texture composition."""
+
 import numpy as np
 import pytest
 
@@ -8,15 +9,19 @@ from grayt.viewer import CameraState, compose_frame
 
 def _maps():
     shape = (4, 3)
-    status = np.array(((0, 1, 2), (0, 0, 2),
-                       (1, 3, 0), (2, 0, 1)), dtype=np.int32)
+    status = np.array(((0, 1, 2), (0, 0, 2), (1, 3, 0), (2, 0, 1)), dtype=np.int32)
     intensity = np.zeros(shape)
     intensity[status == grayt.STATUS_DISK] = (0.2, 0.5, 1.0)
     return grayt.Image(
-        intensity=intensity, g=np.zeros(shape), r_hit=np.zeros(shape),
-        status=status, herr=np.zeros(shape),
-        theta_inf=np.full(shape, np.pi/3),
-        phi_inf=np.full(shape, np.pi/4), extent=(-2, 2, -1, 1))
+        intensity=intensity,
+        g=np.zeros(shape),
+        r_hit=np.zeros(shape),
+        status=status,
+        herr=np.zeros(shape),
+        theta_inf=np.full(shape, np.pi / 3),
+        phi_inf=np.full(shape, np.pi / 4),
+        extent=(-2, 2, -1, 1),
+    )
 
 
 def test_camera_state_orbit_zoom_reset_and_resolution():
@@ -38,8 +43,7 @@ def test_camera_state_keeps_away_from_coordinate_poles():
     assert state.orbit(0, 10_000).theta == 176.8
 
 
-@pytest.mark.parametrize("mode", ["composite", "intensity", "lensing",
-                                  "shadow"])
+@pytest.mark.parametrize("mode", ["composite", "intensity", "lensing", "shadow"])
 def test_compose_frame_is_rgb_texture(mode):
     image = _maps()
     frame = compose_frame(image, mode)
@@ -54,11 +58,39 @@ def test_compose_frame_is_rgb_texture(mode):
 
 def test_composite_contains_disk_and_lensed_background():
     image = _maps()
-    frame = compose_frame(image, "composite")
+    frame = compose_frame(image, "composite", background="grid")
     x_disk, y_disk = np.argwhere(image.status == grayt.STATUS_DISK)[-1]
     x_sky, y_sky = np.argwhere(image.status == grayt.STATUS_ESCAPED)[0]
     assert frame[y_disk, x_disk].max() > 0.5
     assert frame[y_sky, x_sky].max() > 0.0
+
+
+def test_backgrounds_preserve_emission_and_use_lensed_sky():
+    image = _maps()
+    sky = grayt.CelestialSky(np.full((16, 32, 3), [0.2, 0.4, 0.6]))
+    black = compose_frame(image)
+    celestial = compose_frame(image, background="celestial", sky=sky)
+    grid = compose_frame(image, background="grid")
+    escaped = (image.status == 0).T
+    disk = (image.status == 2).T
+    assert np.all(black[escaped] == 0)
+    assert np.allclose(celestial[escaped], [0.2, 0.4, 0.6])
+    assert np.array_equal(black[disk], celestial[disk])
+    assert np.array_equal(black[disk], grid[disk])
+
+
+def test_b_cycles_background_without_retracing():
+    from types import SimpleNamespace
+    from grayt.viewer import InteractiveViewer
+
+    viewer = InteractiveViewer.__new__(InteractiveViewer)
+    viewer.background = "black"
+    viewer._last_image = None
+    event = SimpleNamespace(key="B", handled=False)
+    for expected in ("celestial", "grid", "black"):
+        viewer._on_key_press(event)
+        assert viewer.background == expected
+        assert event.handled
 
 
 def test_compose_frame_rejects_unknown_mode():
@@ -72,14 +104,29 @@ def test_view_cli_builds_scene_without_importing_matplotlib(monkeypatch):
     called = {}
 
     def fake_view(spacetime, disk, camera, **kwargs):
-        called.update(spacetime=spacetime, disk=disk, camera=camera,
-                      kwargs=kwargs)
+        called.update(spacetime=spacetime, disk=disk, camera=camera, kwargs=kwargs)
 
     monkeypatch.setattr(grayt, "view", fake_view)
-    result = cli._main(("view", "-a", "0.7", "--theta", "70",
-                        "--phi", "15", "--res", "320", "160",
-                        "--preview-res", "80", "40", "--no-disk",
-                        "--mode", "lensing"))
+    result = cli._main(
+        (
+            "view",
+            "-a",
+            "0.7",
+            "--theta",
+            "70",
+            "--phi",
+            "15",
+            "--res",
+            "320",
+            "160",
+            "--preview-res",
+            "80",
+            "40",
+            "--no-disk",
+            "--mode",
+            "lensing",
+        )
+    )
 
     assert result == 0
     assert called["spacetime"].a == pytest.approx(0.7)
@@ -98,6 +145,5 @@ def test_view_cli_defaults_to_physical_intensity(monkeypatch):
         called.update(kwargs)
 
     monkeypatch.setattr(grayt, "view", fake_view)
-    assert cli._main(("view", "--res", "32", "16",
-                      "--preview-res", "16", "8")) == 0
+    assert cli._main(("view", "--res", "32", "16", "--preview-res", "16", "8")) == 0
     assert called["mode"] == "intensity"

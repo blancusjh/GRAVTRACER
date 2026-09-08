@@ -37,6 +37,17 @@ def validate(output, chrome=None):
             ),
         )
         page.goto((output / "index.html").as_uri(), wait_until="domcontentloaded")
+        native_links = page.locator("a.desktop-launch").evaluate_all(
+            "links=>links.map(a=>a.href)"
+        )
+        if native_links:
+            assert len(native_links) >= 14
+            assert all(link.startswith("gravtracer://view/") for link in native_links)
+            assert not page.workers  # the optional CPU preview has not started
+            page.goto(
+                (output / "observer_preview.html").as_uri(),
+                wait_until="domcontentloaded",
+            )
 
         def ready():
             page.wait_for_function(
@@ -91,7 +102,12 @@ def validate(output, chrome=None):
         page.locator("#observer-reset").click()
         ready()
         assert state()["theta"] == "85"
-        page.locator('[data-observer-name="star_spots"]').click()
+        if native_links:
+            page.locator("#observer-model").select_option(
+                label="Spherical star · two hot spots"
+            )
+        else:
+            page.locator('[data-observer-name="star_spots"]').click()
         ready()
         assert state()["model"] == "star_spots"
         for label in ("Charged black hole · Q/M=0.8", "Zipoy-Voorhees · q=0.3"):
@@ -131,9 +147,10 @@ def validate(output, chrome=None):
                 "auto orbit",
                 "PNG download",
                 "reset",
-                "gallery card navigation",
+                "native gallery links" if native_links else "gallery card navigation",
             ],
             "lazy_coordinate_plots": diagrams,
+            "native_links": native_links,
             "mobile_no_overflow": True,
             "last_state": state(),
         }

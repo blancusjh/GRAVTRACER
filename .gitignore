@@ -1,5 +1,6 @@
 # Build artifacts
 build/
+dist/
 *.o
 *.mod
 *.smod
@@ -13,16 +14,22 @@ __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
 # Outputs
 output/
 *.png
 *.npy
+*.npz
 *.h5
+*.mp4
+!docs/images/*.png
 
 # OS
 .DS_Store
 
 # Jupyter / meson
 .ipynb_checkpoints/
-build/

@@ -1,245 +1,87 @@
 # GRAVTRACER
 
-Relativistic ray tracing around compact objects: shadows, thin accretion
-disks, gravitational lensing, image formation, and orbit visualization
-in **Kerr** and **q-metric (Zipoy–Voorhees)** spacetimes.
+Fast, simple and reliable light tracer in curved spaces.
 
-Now also supports **custom stationary axisymmetric metrics**, imported metric
-tables, independent emitting disks and stellar surfaces, a reference gray
-volume-transfer path, celestial image maps, and reproducible camera movies.
-Built-in additions include **Reissner–Nordström** and **spherical stellar
-exteriors**. See [custom models and scientific workflows](docs/custom_models.md)
-for the exact geometric assumptions, import formats, and accuracy checks.
+GRAVTRACER traces light around compact objects to render black-hole shadows,
+accretion disks, lensing, stellar surfaces, and synthetic skies. A Fortran
+geodesic core powers the Python package `grayt` and the `gravtracer` CLI.
 
-```python
-import grayt
+![A lensed Page–Thorne disk around a spinning Kerr black hole](docs/images/kerr_disk.png)
 
-bh = grayt.BlackHole(a=0.8)
-image = grayt.render_scene(
-    bh, grayt.Camera(r=100, theta=70), grayt.PageThorneDisk(bh),
-    sky=grayt.CelestialSky.procedural(seed=42), exposure=5000)
-image.save("observation.npz")  # raw endpoints, radiation maps, JSON provenance
-```
-
-Generate 14 model panels and four MP4s (requires `ffmpeg` for videos):
-
-```sh
-PYTHONPATH=python python examples/model_gallery.py --output output/stationary_models
-PYTHONPATH=python python examples/volume_snapshot.py
-gravtracer render configs/celestial_kerr.yml -o output/celestial.png --npz
-```
-
-The new scene path uses the Fortran CPU integrator. Legacy GPU rendering and
-the historical `ThinDisk` convention remain available. `PageThorneDisk`
-adds consistent Keplerian motion and bolometric `g^4` transfer; imported
-volumes require radiation coefficients, not just raw GRMHD fluid variables.
-
-Born as a replication of *OSIRIS: A New Code for Ray Tracing Around
-Compact Objects* (Velásquez-Cadavid et al., arXiv:2202.00086,
-Eur. Phys. J. C) — every figure of the paper is reproduced by the
-example scripts — and extended into a general laboratory.
-
-**Architecture:** modern Fortran core (Hamiltonian geodesics, one shared
-adaptive RKDP45/RKCK45/RKF45 stepper + event-bisection machinery,
-OpenMP over rays) wrapped with f2py, driven by the Python package
-**`grayt`**.
-
-**Ontology:**
-
-```
-Spacetime (BlackHole | QMetric)        the geometry
-  └─ PhysicalSystem (+ ThinDisk, ImageSource)     the physics
-       └─ System (+ Camera, Screen, rays, experiments)   the laboratory
-Results: Image, Photograph, Trajectory, Ray
-```
+*Kerr black hole, spin 0.95, viewed at 70°. The sky is synthetic and the colors
+are a display mapping, not measured spectra.*
 
 ## Install
 
+Requires Python 3.10+ and a Fortran compiler such as `gfortran`.
+
 ```sh
-uv pip install .                                   # regular install
-uv pip install meson-python numpy ninja meson      # then, for editable:
-uv pip install -e . --no-build-isolation
-uv pip install '.[viewer]'                         # GPU + desktop viewer
+python -m pip install .
 ```
 
-(`--no-build-isolation` for editable installs is the standard
-meson-python requirement; plain `pip install .` works too. Needs
-`gfortran`.) This provides the `gravtracer` console command.
+For development, install the build tools first, then use an editable install:
 
-Development fallback without pip: `make` compiles the extension in-tree
-(`python/grayt/`), then `PYTHONPATH=python`; `make test` runs pytest.
+```sh
+python -m pip install meson-python numpy ninja meson
+python -m pip install -e . --no-build-isolation
+```
 
-## Usage
+Optional extras: `python -m pip install '.[viewer]'` for the OpenCL desktop
+viewer, or `python -m pip install '.[interactive]'` for browser gallery tools.
+
+## Quick start
 
 ```python
 import grayt
 
-bh   = grayt.BlackHole(a=0.95)                          # spacetime
-cam  = grayt.Camera(r=1000, theta=85, x=(-24, 24),      # theta in DEGREES
-                    y=(-12, 12), resolution=(1024, 512))
-disk = grayt.ThinDisk(l0=1.8, r_out=20)                 # matter (Kerr-only)
-
-img = grayt.render(bh, cam, disk)   # Image: .intensity .g .r_hit .status ...
-img.plot(label="$a=0.95$")
-
-qm = grayt.QMetric(q=1.0)           # naked singularity, ADM mass 1+q
-grayt.shadow(qm, cam).plot()
+black_hole = grayt.BlackHole(a=0.8)
+camera = grayt.Camera(r=100, theta=70, resolution=(640, 400))
+disk = grayt.PageThorneDisk(black_hole)
+image = grayt.render_scene(
+    black_hole, camera, disk,
+    sky=grayt.CelestialSky.procedural(seed=42),
+    exposure=5000,
+)
+image.plot()
+image.save("observation.npz")
 ```
 
-The laboratory layer composes multi-instrument scenes:
-
-```python
-src = grayt.ImageSource(center=(-150, 0, 0), normal=(1, 0, 0),
-                        width=90, image="picture.jpg")   # lambertian
-lab = grayt.System(physical=grayt.PhysicalSystem(spacetime=bh,
-                                                 sources=[src]))
-photo = lab.photograph(grayt.Camera(x=(-45, 45), y=(-28, 28),
-                                    resolution=(900, 560)))
-photo.plot()
-lab.visualize3d()                    # 3D scene with traced rays
-```
-
-Emission models: `"lambertian"` (default — photographed by backward
-tracing) and `"collimated"` (forward projection onto a `Screen` via
-`System.form_image`). Single geodesics: `grayt.trace` (photons or
-massive particles via `grayt.orbit_ic`), plotted with
-`grayt.plot_orbits_2d`.
-
-CLI (YAML scenes; schema in `System.from_yaml.__doc__`):
+Camera angles are in degrees; `image.save` keeps raw ray and radiation maps
+with scene provenance. For a command-line render:
 
 ```sh
-gravtracer render configs/fig13_a095.yml -o a095.png
-gravtracer shadow -a 0.98 -o shadow.png
-gravtracer view -a 0.95
+gravtracer render configs/celestial_kerr.yml -o celestial.png --npz
 ```
 
-### GPU backend
+## What it supports
 
-`render`/`shadow` can run on any OpenCL device — Apple Silicon GPUs
-(via Apple's OpenCL-on-Metal) and NVIDIA/AMD/Intel — with one work-item
-per pixel (`pip install gravtracer[gpu]`, i.e. pyopencl):
+- Kerr and Zipoy–Voorhees geometries, plus stationary axisymmetric metric
+  tables and spherical stellar or charged exteriors.
+- Thin disks, Page–Thorne disks, prescribed surfaces, gray volume radiation,
+  and celestial image maps. The legacy thin-disk model reproduces the
+  [OSIRIS paper](https://arxiv.org/abs/2202.00086).
+- Double-precision CPU rendering; optional OpenCL rendering and a live
+  desktop viewer for the supported Kerr and q-metric scenes.
+- Scientific `.npz` archives, reproducible galleries, and camera movies.
 
-```python
-img = grayt.render(bh, cam, disk, backend="gpu")   # ~80x an M4's CPU cores
-grayt.gpu.devices()                                # enumerate devices
+![Comparison of Kerr, stellar, charged, and quadrupolar models](docs/images/model_gallery.png)
 
-# Reuse allocations and the disk flux table across changing cameras:
-renderer = grayt.gpu.Renderer(bh, disk, cam.resolution)
-next_img = renderer.render(cam)
-```
+*Model comparison with fixed display exposure. Charged and quadrupolar panels
+are theoretical examples.*
 
-Precision follows the hardware: fp64 where supported (NVIDIA/AMD), fp32
-on Apple GPUs (no double-precision hardware); on fp32 the tolerances are
-clamped to `rtol>=1e-5, atol>=1e-7` and the result is image-quality
-(status maps match the CPU reference; hit radii/angles agree to ~1e-3).
-`precision="fp32"` also speeds up NVIDIA cards considerably. The Fortran
-CPU core (`backend="cpu"`, default) remains the double-precision
-reference; the GPU backend implements the `rkdp45` integrator only.
-
-### Interactive viewer
-
-On macOS, register native-window links in the gallery with:
+Generate the gallery yourself with:
 
 ```sh
-PYTHONPATH=python python examples/install_desktop_launcher.py
-PYTHONPATH=python python examples/observer_gallery.py --output output/stationary_models
+python examples/model_gallery.py --output output/stationary_models --skip-videos
 ```
 
-Each example then has an **Open desktop viewer** link. Native backgrounds
-start black; press **B** to cycle **black → celestial map → diagnostic grid**.
-Kerr and q-metric windows use OpenCL; imported-metric and stellar windows
-are labeled CPU. The optional browser preview loads only when expanded.
+See [custom models and scientific workflows](docs/custom_models.md) for model
+assumptions, import formats, and gallery controls. The
+[demo notebook](notebooks/grayt_demo.ipynb) provides a guided example.
 
-For a browser view of the lensed disk and celestial sky, the generated model
-gallery can embed an offline observer renderer:
+## Validation and license
 
-```sh
-PYTHONPATH=python python examples/observer_gallery.py --output output/stationary_models
-```
-
-Open `output/stationary_models/index.html`, then drag the image to orbit and
-scroll to zoom. See [custom models](docs/custom_models.md#gallery-videos-and-cli)
-for supported browser presets, numerical validation, and antialiased movies.
-
-The optional VisPy viewer turns the GPU renderer into a live observer view:
-
-```python
-grayt.view(bh, disk, cam)  # install gravtracer[viewer] first
-```
-
-Left-drag orbits the observer in inclination/azimuth and the mouse wheel
-zooms the image plane. Interaction renders at a preview resolution and
-automatically refines on release/idle. The default view shows only the
-physical disk intensity. `M` cycles intensity, lensing, shadow, and the
-optional composite overlay with its colored celestial grid. `R` resets,
-Space refines, `S` saves the current frame, and Escape closes the window.
-The CLI exposes resolution, preview resolution, precision, OpenCL device,
-disk, and display-mode options through `gravtracer view --help`.
-
-The integrator's maximum step grows conservatively in the weak-curvature far
-field (`max(25, min(0.1 r, 100))`); the adaptive error test is unchanged, and
-the same rule is used by the Fortran reference and OpenCL kernel.
-
-## Validation
-
-| Check | Result |
-|---|---|
-| ISCO radii (a = 0, 0.5, 0.95) | 6.000, 4.233, 1.937 (exact) |
-| Camera initial conditions | null to ~1e-16 (Kerr and q-metric) |
-| Constraint drift, Figs. 4–5 orbits (rtol 1e-11) | RKDP45 ~1e-10 (best) |
-| Shadow vs analytic Bardeen rim, a = 0.98 (Fig. 6) | within 1 pixel |
-| Page–Thorne flux, a = 0 | F(isco) = 0, peak at r = 9.55 |
-| Weak-field deflection (b = 50) | 4M/b + 15πM²/4b² to < 2% |
-| q-metric | q = 0 ≡ Schwarzschild to round-off; shadow scales with ADM mass 1+q |
-
-Run the physics and regression tests with `make test` (OpenCL cases skip
-when no device is available).
-Example scripts (outputs go to git-ignored
-`output/`); defaults reproduce the paper's figures:
-
-| Script | Defaults reproduce |
-|---|---|
-| `examples/rays3d.py` | Fig. 1 (3D geodesics) |
-| `examples/constraint_drift.py` | Figs. 4–5 |
-| `examples/shadow.py` | Fig. 6 |
-| `examples/benchmark.py` | Fig. 8 |
-| `examples/lensing_sphere.py` | Fig. 12 |
-| `examples/disk_images.py` | Fig. 13 (`--res 2048 1024`) |
-| `examples/qmetric.py` | Appendix A / Fig. 14 (quadrupole physics) |
-| `examples/orbits2d.py` | 2D orbit projections (Figs. 3/14 style) |
-| `examples/image_formation.py` | forward (collimated) projection |
-| `examples/photograph.py` | lambertian imaging of a loaded picture |
-
-A demo notebook lives at `notebooks/grayt_demo.ipynb`.
-
-### Errata found in the paper (as printed)
-
-1. **Eq. (7)**: the (g_tφ/g_φφ)L term in 𝒫^t needs a minus sign (their
-   own base-change matrix has it right); otherwise camera initial
-   conditions are not null for a ≠ 0 (`src/raytracer.f90`).
-2. **Eq. (18)**: the numerator `g_tφ + g_φφ l0` must be `g_tφ + g_tt l0`;
-   as printed, Ω → −l0 in the Schwarzschild limit (`src/disk_model.f90`).
-3. **Eq. (22)**: the printed g equals ν_em/ν_obs; the redshift factor in
-   I_obs = g³ I_em is its inverse (`src/disk_model.f90`).
-4. **Eq. (A.1)**: sign slip in the spatial block of the q-metric; the
-   standard Zipoy–Voorhees form is used (`src/q_metric.f90`).
-
-## Review & roadmap
-
-A three-way code review (architecture/physics, CLI user, notebook user)
-with the action plan and future-extension roadmap lives in
-[docs/REVIEW.md](docs/REVIEW.md).
-
-## Status
-
-- [x] M0–M4: build, geodesics, shadow, lensing, thin disk (paper Figs. 1–13)
-- [x] Scene layer: 3D viewer, image formation (photograph/form_image)
-- [x] Structural review fixes: Spacetime→PhysicalSystem→System hierarchy,
-      shared Fortran adaptive-step/event machinery, input validation
-- [x] q-metric spacetime (Appendix A) + Fig. 14-style orbit physics
-- [x] Packaging: `uv pip install -e .` (meson-python), `gravtracer` CLI
-- [x] Custom stationary axisymmetric metric tables, Keplerian/g⁴ Page–Thorne
-      emission, custom disks and stellar surfaces, gray volume transfer
-- [x] Celestial maps, scientific archives, model gallery and camera movies
-- [ ] Next: frequency-resolved/polarized transfer, evolving geometries,
-      custom GPU metrics, and general physical photographs
+Install `.[test]`, then run `make test` for physics and regression checks.
+OpenCL cases skip when no compatible device is available. See
+[validation and paper errata](docs/validation.md) for reference results.
+GRAVTRACER is released under the [MIT License](LICENSE).

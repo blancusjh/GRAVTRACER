@@ -44,6 +44,12 @@ SPIN = 0.9
 R_OUT = 60.0
 EXPOSURE = 240.0        # white at I = 1/240; log tone over 2.5 decades
 SKY_GAIN = 1.4
+# The Milky Way's core lies behind the hole for a camera at phi = 90 deg.
+# Start 120 deg earlier, over sparse sky, so the band sweeps in behind the
+# hole about a third of the way through and is seen deforming as it enters.
+PHI_START = -30.0
+PHI_SLOWEST = 90.0      # the orbit eases to its slowest speed here
+EASE = 0.65             # speed there is (1 - EASE) of the mean
 
 
 def vertical_optical_depth(r, phi):
@@ -78,10 +84,15 @@ def hot_spot_disk(bh, n_spots=9, seed=3):
 def cameras(frames, resolution):
     camera = grayt.Camera(r=100.0, theta=72.0, phi=90.0, x=(-40.0, 40.0),
                           y=(-25.0, 25.0), resolution=resolution)
+    u0 = (PHI_SLOWEST - PHI_START) / 360.0
     for k in range(frames):
-        phase = 2 * np.pi * k / frames
+        u = k / frames
+        phase = 2 * np.pi * u
+        # periodic easing: d(phi)/du = 360 (1 - EASE cos 2pi(u - u0))
+        eased = u - EASE * (np.sin(2 * np.pi * (u - u0))
+                            + np.sin(2 * np.pi * u0)) / (2 * np.pi)
         yield replace(camera, theta=float(72.0 + 12.0 * np.sin(phase)),
-                      phi=float((90.0 + 360.0 * k / frames) % 360.0))
+                      phi=float((PHI_START + 360.0 * eased) % 360.0))
 
 
 def caption(frame, camera, t, font, small):

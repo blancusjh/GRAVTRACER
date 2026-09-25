@@ -30,8 +30,8 @@ def scene_layout(radius=50):
     axis = dict(
         range=[-radius, radius],
         backgroundcolor=BACKGROUND,
-        gridcolor="#29384c",
-        zerolinecolor="#475b76",
+        gridcolor="#2a2826",
+        zerolinecolor="#4a4640",
         showbackground=True,
         tickfont=dict(size=11),
     )
@@ -50,7 +50,7 @@ def layout(radius=50):
         template="plotly_dark",
         paper_bgcolor=BACKGROUND,
         plot_bgcolor=BACKGROUND,
-        font=dict(color="#dce4ef", family="system-ui, sans-serif"),
+        font=dict(color="#ece6da", family="STIX Two Text, Palatino, Georgia, Times New Roman, serif"),
         height=620,
         margin=dict(l=0, r=0, t=85, b=25),
         scene=scene_layout(radius),
@@ -111,7 +111,7 @@ def ray_groups(spacetime, camera):
         "Captured / surface hit": [[], [], []],
         "Escaping rays": [[], [], []],
     }
-    colors = {"Captured / surface hit": "#ffb454", "Escaping rays": "#69d4ff"}
+    colors = {"Captured / surface hit": "#e0643a", "Escaping rays": "#7fc8c0"}
     for x in np.linspace(-12, 12, 5):
         for y in np.linspace(-8, 8, 5):
             initial, pt, pp = grayt.camera_ray(spacetime, camera, x, y)
@@ -226,9 +226,9 @@ def geodesic_view():
                 xanchor="right",
                 y=1.07,
                 yanchor="top",
-                bgcolor="#23334a",
-                bordercolor="#536984",
-                font=dict(color="#dce4ef"),
+                bgcolor="#0d0c0b",
+                bordercolor="#4a4640",
+                font=dict(color="#ece6da"),
             )
         ],
     )

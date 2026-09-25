@@ -75,6 +75,7 @@ py.install_sources(
     'python/grayt/instruments.py',
     'python/grayt/matter.py',
     'python/grayt/plotting.py',
+    'python/grayt/style.py',
     'python/grayt/results.py',
     'python/grayt/spacetime.py',
     'python/grayt/system.py',

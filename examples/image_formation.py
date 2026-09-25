@@ -20,19 +20,20 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import grayt
+from grayt import style
 
 
 def test_pattern(n=512):
     """Colored quadrants + grid + circle: enough structure to see the
     lensing distortion clearly."""
     img = np.zeros((n, n, 3))
-    img[:n//2, :n//2] = (0.85, 0.15, 0.15)
-    img[:n//2, n//2:] = (0.15, 0.6, 0.2)
-    img[n//2:, :n//2] = (0.15, 0.3, 0.8)
-    img[n//2:, n//2:] = (0.95, 0.85, 0.2)
+    img[:n//2, :n//2] = (0.88, 0.39, 0.23)    # ember
+    img[:n//2, n//2:] = (0.50, 0.78, 0.75)    # teal
+    img[n//2:, :n//2] = (0.72, 0.64, 0.88)    # lilac
+    img[n//2:, n//2:] = (0.95, 0.72, 0.35)    # amber
     ii, jj = np.mgrid[0:n, 0:n]
     grid = (ii % (n//8) < 2) | (jj % (n//8) < 2)
-    img[grid] = 1.0
+    img[grid] = (0.93, 0.90, 0.85)
     ring = np.abs(np.hypot(ii - n/2, jj - n/2) - n/3) < 2
     img[ring] = 0.0
     return img
@@ -69,19 +70,30 @@ def main():
     print(f"propagated {stats['n_rays']} rays in {time.time()-t0:.1f}s: "
           f"{stats['status_counts']} -> {stats['n_on_screen']} on screen")
 
-    fig = plt.figure(figsize=(15, 5))
-    ax1 = fig.add_subplot(1, 3, 1)
+    style.use()
+    fig = plt.figure(figsize=(15, 5.4))
+    ax1 = fig.add_axes((0.02, 0.08, 0.28, 0.8))
     ax1.imshow(source.image)
-    ax1.set_title("source image"); ax1.axis("off")
-    ax2 = fig.add_subplot(1, 3, 2)
+    ax1.set_title("Source image")
+    ax1.axis("off")
+    ax2 = fig.add_axes((0.33, 0.08, 0.28, 0.8))
     ax2.imshow(screen.image)
-    ax2.set_title(f"formed image on screen ($a={args.spin}$)")
+    ax2.set_title(f"Formed on the screen, $a = {args.spin}$")
     ax2.axis("off")
-    ax3 = fig.add_subplot(1, 3, 3, projection="3d")
-    sys3.visualize3d(ax=ax3, max_rays=40, elev=16, azim=-72)
-    lim = 75.0
+    ax3 = fig.add_axes((0.60, -0.02, 0.42, 1.0), projection="3d")
+    lim = 70.0
+    for ray in sys3.rays:       # keep the drawing inside the view box
+        beyond = np.nonzero(np.abs(ray.points).max(axis=1) > lim)[0]
+        if beyond.size:
+            ray.points = ray.points[:max(beyond[0], 2)]
+    sys3.visualize3d(ax=ax3, max_rays=40, elev=16, azim=-72,
+                     show_axes=False)
     ax3.set_xlim(-lim, lim); ax3.set_ylim(-lim, lim); ax3.set_zlim(-lim, lim)
-    ax3.set_title("scene (sample rays)")
+    ax3.set_box_aspect((1, 1, 1), zoom=1.3)
+    ax3.set_title("Scene, sample rays", y=0.93)
+    fig.text(0.02, 0.03, "Collimated projection: one ray per source pixel "
+             "along the card normal, traced to the screen plane.",
+             color=style.MUTED, fontsize=9.5, style="italic")
     fig.savefig(args.output, dpi=170, bbox_inches="tight")
     print(f"wrote {args.output}")
 

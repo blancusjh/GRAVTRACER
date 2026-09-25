@@ -68,17 +68,17 @@ class Photograph:
     meta: dict = field(default_factory=dict)
 
     def plot(self, ax=None, label=None):
-        import matplotlib.pyplot as plt
+        from . import style
         if ax is None:
-            _, ax = plt.subplots(figsize=(9, 6))
+            import matplotlib.pyplot as plt
+            with style.context():
+                _, ax = plt.subplots(figsize=(9, 6))
+                style.frame(ax)
         ax.imshow(np.clip(self.rgb, 0, 1).transpose(1, 0, 2)[::-1],
                   origin="upper", extent=self.extent, aspect="equal",
                   interpolation="bilinear")
         if label:
-            ax.text(0.04, 0.08, label, transform=ax.transAxes,
-                    fontsize=12, color="black",
-                    bbox=dict(facecolor="white", alpha=0.9,
-                              boxstyle="round,pad=0.3"))
+            style.label(ax, label)
         return ax
 
 

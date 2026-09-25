@@ -22,6 +22,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import grayt
+from grayt import style
 
 DEFAULT_IMAGE = ASSETS/"labore_et_constantia.jpg"
 
@@ -61,15 +62,18 @@ def main():
     print(f"photographed {args.res[0]}x{args.res[1]} in "
           f"{time.time()-t0:.1f}s, ray statuses: {counts}")
 
+    style.use()
     fig, (ax1, ax2) = plt.subplots(
-        1, 2, figsize=(15, 5.6), constrained_layout=True,
+        1, 2, figsize=(15, 5.8), constrained_layout=True,
         gridspec_kw={"width_ratios": [1, 1.6]})
     ax1.imshow(source.image)
-    ax1.set_title("source image (lambertian card behind the hole)")
+    ax1.set_title("Source: lambertian card behind the hole")
     ax1.axis("off")
     photo.plot(ax=ax2, label=f"$a = {args.spin}$")
-    ax2.set_title("photograph through the Kerr spacetime")
-    ax2.set_xlabel("$x\\;[M]$"); ax2.set_ylabel("$y\\;[M]$")
+    style.frame(ax2)
+    ax2.invert_xaxis()      # as seen through the camera
+    ax2.set_title("Photograph through the Kerr spacetime")
+    ax2.set_xlabel("$x$ / M"); ax2.set_ylabel("$y$ / M")
     fig.savefig(args.output, dpi=170, bbox_inches="tight")
     print(f"wrote {args.output}")
 

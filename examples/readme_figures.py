@@ -17,13 +17,13 @@ from matplotlib.lines import Line2D
 import numpy as np
 
 import grayt
+from grayt import style
 
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGES = ROOT / "docs" / "images"
-BG = "#000000"
-INK = "#e3edf7"
-MUTED = "#a4b4c8"
+BG, INK, MUTED = style.BG, style.INK, style.MUTED
+style.use()
 
 
 def disk_figure():
@@ -41,18 +41,20 @@ def disk_figure():
         rtol=2e-9,
         atol=2e-11,
     )
-    fig = plt.figure(figsize=(12.8, 7.8), facecolor=BG)
-    ax = fig.add_axes((0.06, 0.13, 0.88, 0.78), facecolor=BG)
+    fig = plt.figure(figsize=(12.8, 7.8))
+    ax = fig.add_axes((0.07, 0.12, 0.88, 0.74))
     ax.imshow(image.rgb.transpose(1, 0, 2), origin="lower", extent=image.extent)
-    ax.set(xlabel="image-plane x / M", ylabel="image-plane y / M")
-    ax.tick_params(colors=MUTED, length=0, labelsize=10)
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    ax.xaxis.label.set_color(MUTED)
-    ax.yaxis.label.set_color(MUTED)
-    fig.text(0.06, 0.955, "KERR BLACK HOLE  /  a = 0.95", color=INK, fontsize=17, weight="bold", va="top")
-    fig.text(0.06, 0.04, "Page–Thorne disk · 70° inclination · NASA SVS 2020 catalog sky", color=MUTED, fontsize=10)
-    fig.savefig(IMAGES / "kerr_disk.png", dpi=185, facecolor=BG)
+    ax.set(xlabel="image-plane $x$ / M", ylabel="image-plane $y$ / M")
+    style.frame(ax)
+    fig.text(0.07, 0.945, "Kerr black hole, $a = 0.95$", color=INK,
+             fontsize=21, va="top")
+    fig.text(0.07, 0.895, "Page–Thorne thin disk seen at 70° inclination "
+             "against the NASA SVS 2020 catalog sky", color=MUTED,
+             fontsize=12.5, style="italic", va="top")
+    fig.text(0.07, 0.03, "Disk colors are a display mapping of the "
+             "bolometric intensity, not measured spectra.", color=MUTED,
+             fontsize=9.5)
+    fig.savefig(IMAGES / "kerr_disk.png", dpi=185)
     plt.close(fig)
 
 
@@ -75,52 +77,78 @@ def rays_figure():
             near = trajectory.r.min() < 4.0 and not captured
             rays.append((points, "captured" if captured else "near" if near else "escaped"))
 
-    fig = plt.figure(figsize=(14, 7.8), facecolor=BG)
+    colors = {"captured": style.EMBER, "near": style.AMBER,
+              "escaped": style.TEAL}
+    fig = plt.figure(figsize=(14, 7.8))
     for panel, (elev, azim) in enumerate(((27, -56), (48, 30)), start=1):
-        ax = fig.add_subplot(1, 2, panel, projection="3d", facecolor=BG)
+        ax = fig.add_subplot(1, 2, panel, projection="3d")
+        style.dark_3d(ax)
         u, v = np.meshgrid(np.linspace(0, 2 * np.pi, 48), np.linspace(0, np.pi, 28))
         rh = spacetime.capture_radius
         ax.plot_surface(rh * np.cos(u) * np.sin(v), rh * np.sin(u) * np.sin(v),
-                        rh * np.cos(v), color="#000000", edgecolor="#36536e",
+                        rh * np.cos(v), color="#000000", edgecolor="#4a4640",
                         linewidth=0.17, shade=False, zorder=5)
+        phi = np.linspace(0, 2 * np.pi, 241)
+        for r in (6, 12, 18, 24) if panel == 1 else (4, 8, 12):
+            ax.plot(r * np.cos(phi), r * np.sin(phi), 0 * phi,
+                    color=style.AMBER, lw=0.45, alpha=0.22)
         for points, kind in rays:
             if panel == 2:
                 points = points[np.linalg.norm(points, axis=1) <= 12]
                 if len(points) < 2:
                     continue
-            color = {"captured": "#f39383", "near": "#f4ce80", "escaped": "#78cee2"}[kind]
+            color = colors[kind]
             ax.plot(*points.T, color=color, lw=3.0, alpha=0.10)
             ax.plot(*points.T, color=color, lw=1.15, alpha=0.88)
         if panel == 1:
-            ax.scatter(*observer, s=24, color="#f1f5fa", depthshade=False)
+            ax.scatter(*observer, s=24, color=INK, depthshade=False)
+            ax.text(*(observer + (0, 0, 2.5)), "observer", color=MUTED,
+                    fontsize=10, style="italic", ha="center")
             ax.set(xlim=(-26, 26), ylim=(-26, 26), zlim=(-18, 18))
         else:
             ax.set(xlim=(-12, 12), ylim=(-12, 12), zlim=(-9, 9))
         ax.set_box_aspect((1, 1, 0.78), zoom=1.42)
         ax.view_init(elev=elev, azim=azim)
-        ax.set_axis_off()
-        ax.text2D(0.04, 0.93, "OBLIQUE VIEW" if panel == 1 else "CLOSE PASS  /  r < 12 M",
-                  color=MUTED, transform=ax.transAxes, fontsize=10, weight="bold")
-    fig.suptitle("NULL GEODESICS  /  KERR a = 0.8", color=INK, fontsize=18,
-                 weight="bold", x=0.055, y=0.97, ha="left")
-    legend = [Line2D([0], [0], color=c, lw=2.5, label=label) for c, label in (
-        ("#78cee2", "escaped"), ("#f4ce80", "strongly bent"),
-        ("#f39383", "captured"))]
-    fig.legend(handles=legend, loc="lower center", ncol=3, frameon=False,
-               labelcolor=INK, bbox_to_anchor=(0.5, 0.065), fontsize=10)
-    fig.text(0.055, 0.025, "Traced null rays · Boyer–Lindquist coordinates shown in a pseudo-Cartesian embedding",
-             color=MUTED, fontsize=9)
-    fig.savefig(IMAGES / "ray_trajectories_3d.png", dpi=185, facecolor=BG)
+        ax.text2D(0.06, 0.9, "Oblique view" if panel == 1
+                  else "Close pass, $r < 12$ M", color=INK,
+                  transform=ax.transAxes, fontsize=13)
+    fig.text(0.055, 0.93, "Null geodesics around a Kerr black hole, $a = 0.8$",
+             color=INK, fontsize=21)
+    fig.text(0.055, 0.885, "Rays traced backward from one observer through "
+             "a 9 × 3 grid of image-plane pixels", color=MUTED, fontsize=12.5,
+             style="italic")
+    legend = [Line2D([0], [0], color=c, lw=2, label=label) for c, label in (
+        (style.TEAL, "escaped"), (style.AMBER, "strongly bent, $r_{\\min} < 4$ M"),
+        (style.EMBER, "captured"))]
+    fig.legend(handles=legend, loc="lower left", ncol=3,
+               bbox_to_anchor=(0.05, 0.06), fontsize=11)
+    fig.text(0.055, 0.03, "Boyer–Lindquist coordinates shown in a "
+             "pseudo-Cartesian embedding, units of M. Equatorial rings mark "
+             "constant $r$.", color=MUTED, fontsize=9.5)
+    fig.savefig(IMAGES / "ray_trajectories_3d.png", dpi=185)
     plt.close(fig)
+
+
+def scene_figure():
+    import sys
+
+    import image_formation_scene
+
+    argv, sys.argv = sys.argv, ["image_formation_scene.py", "-o",
+                                str(IMAGES / "image_formation_scene.png")]
+    try:
+        image_formation_scene.main()
+    finally:
+        sys.argv = argv
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--only", choices=("disk", "rays"),
+    parser.add_argument("--only", choices=("disk", "rays", "scene"),
                         help="regenerate one figure")
     args = parser.parse_args()
     IMAGES.mkdir(parents=True, exist_ok=True)
-    jobs = {"disk": disk_figure, "rays": rays_figure}
+    jobs = {"disk": disk_figure, "rays": rays_figure, "scene": scene_figure}
     for name, job in jobs.items():
         if args.only is None or name == args.only:
             print(f"Rendering {name}...", flush=True)

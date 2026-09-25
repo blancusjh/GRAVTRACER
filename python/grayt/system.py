@@ -301,48 +301,61 @@ class System:
     # ------------------------------------------------------ visualization
 
     def visualize3d(self, ax=None, show_rays=True, max_rays=200,
-                    show_surfaces=True, elev=18.0, azim=-60.0):
-        """3D view of the scene: capture surface, disk annulus, planar
-        surfaces, and traced rays (captured black, escaped colored)."""
+                    show_surfaces=True, elev=18.0, azim=-60.0,
+                    show_axes=True):
+        """3D view of the scene on a black field: the capture surface,
+        disk annulus, sources painted with their images, screens with
+        whatever has been formed on them, and the traced rays (captured
+        rays in ember, the rest in their own color or the house cycle).
+        """
         import matplotlib.pyplot as plt
 
+        from . import style
+
         if ax is None:
-            fig = plt.figure(figsize=(9, 8))
-            ax = fig.add_subplot(projection="3d")
+            with style.context():
+                fig = plt.figure(figsize=(9, 8))
+                ax = fig.add_subplot(projection="3d")
+        style.dark_3d(ax, axes_visible=show_axes)
 
         st = self.physical.spacetime
-        uu, vv = np.meshgrid(np.linspace(0, 2*np.pi, 40),
-                             np.linspace(0, np.pi, 20))
-        rh = st.capture_radius
-        ax.plot_surface(rh*np.cos(uu)*np.sin(vv), rh*np.sin(uu)*np.sin(vv),
-                        rh*np.cos(vv), color="black", shade=False)
         if self.physical.disk is not None:
             disk = self.physical.disk
             r_in = disk.r_in if disk.r_in is not None else st.isco
             rr, pp = np.meshgrid(np.linspace(r_in, disk.r_out, 12),
-                                 np.linspace(0, 2*np.pi, 60))
+                                 np.linspace(0, 2*np.pi, 73))
             ax.plot_surface(rr*np.cos(pp), rr*np.sin(pp), 0.0*rr,
-                            color="darkorange", alpha=0.25, shade=False)
+                            color=style.AMBER, alpha=0.18, shade=False,
+                            linewidth=0)
+            for r in (r_in, disk.r_out):
+                ax.plot(r*np.cos(pp[:, 0]), r*np.sin(pp[:, 0]), 0*pp[:, 0],
+                        color=style.AMBER, lw=0.6, alpha=0.7)
         if show_surfaces:
-            from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-            for surf, col in ([(s, "#4477cc") for s in self.physical.sources]
-                              + [(s, "#888888") for s in self.screens]):
-                ax.add_collection3d(Poly3DCollection(
-                    [surf.corners()], alpha=0.25, facecolor=col,
-                    edgecolor="black"))
+            for src in self.physical.sources:
+                style.textured_plane(ax, src, src.image, cells=120)
+            for scr in self.screens:
+                style.textured_plane(ax, scr, scr.image, cells=120,
+                                     edge=style.MUTED)
         if show_rays:
-            cyc = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+            cyc = [style.AMBER, style.TEAL, "#b7a3e0", "#c9d77a"]
             k = 0
             for ray in self.rays[:max_rays]:
                 if ray.status == STATUS_CAPTURED:
-                    c, lw, al = "black", 0.7, 0.9
+                    c, lw, al = style.EMBER, 0.8, 0.9
                 else:
                     c = ray.color if ray.color is not None else cyc[k % len(cyc)]
-                    lw, al = 0.8, 0.8
+                    lw, al = 0.8, 0.85
                     k += 1
                 ax.plot(ray.points[:, 0], ray.points[:, 1],
                         ray.points[:, 2], color=c, lw=lw, alpha=al)
-        ax.set_xlabel("$x$"); ax.set_ylabel("$y$"); ax.set_zlabel("$z$")
+        uu, vv = np.meshgrid(np.linspace(0, 2*np.pi, 41),
+                             np.linspace(0, np.pi, 21))
+        rh = st.capture_radius
+        ax.plot_surface(rh*np.cos(uu)*np.sin(vv), rh*np.sin(uu)*np.sin(vv),
+                        rh*np.cos(vv), color="black", edgecolor="#4a4640",
+                        linewidth=0.15, shade=False)
+        ax.set_xlabel("$x$ / M"); ax.set_ylabel("$y$ / M")
+        ax.set_zlabel("$z$ / M")
         ax.view_init(elev=elev, azim=azim)
         ax.set_box_aspect((1, 1, 1))
         return ax

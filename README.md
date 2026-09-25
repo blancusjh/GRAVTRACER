@@ -69,8 +69,17 @@ gravtracer render configs/celestial_kerr.yml -o celestial.png --npz
 
 ![Gallery of GRAVTRACER black holes, stars, and other stationary models](docs/images/model_gallery.png)
 
-*Stationary model gallery with the catalog sky and black background. Disk and
-surface colors are display mappings.*
+*Kerr holes arranged by spin and inclination, beside stellar, charged, and
+Zipoy–Voorhees exteriors, all against the catalog sky. Disk and surface colors
+are display mappings.*
+
+![A camera photographs an engraving behind a Kerr black hole through traced null geodesics](docs/images/image_formation_scene.png)
+
+*How an image forms. Each camera pixel sends a null geodesic backward until it
+meets the illuminated card, falls into the hole, or escapes. Rays 1 and 2 land
+on almost the same point of the engraving but pass on opposite sides of the
+hole: they are its primary and secondary images. Run
+`python examples/image_formation_scene.py` to reproduce it.*
 
 ![Two 3D views of Kerr light-ray trajectories](docs/images/ray_trajectories_3d.png)
 
@@ -83,6 +92,10 @@ Generate the gallery yourself with:
 ```sh
 python examples/model_gallery.py --output output/stationary_models --skip-videos
 ```
+
+Every figure uses one house style: a black field and STIX serif type. Library
+plots apply it automatically; call `grayt.style.use()` to style your own
+matplotlib figures the same way.
 
 See [custom models and scientific workflows](docs/custom_models.md) for model
 assumptions, import formats, and gallery controls. The

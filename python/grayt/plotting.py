@@ -1,9 +1,33 @@
-"""Plotting helpers reproducing the visual style of arXiv:2202.00086."""
+"""Plotting helpers reproducing the figures of arXiv:2202.00086.
+
+Helpers that create their own figure draw it in the GRAVTRACER house
+style (black field, serif type; see :mod:`grayt.style`). Pass ``ax`` to
+compose onto an existing axis in whatever style it already has.
+"""
 from __future__ import annotations
+
+import functools
+import inspect
 
 import numpy as np
 
+from . import style
 
+
+def _styled(func):
+    """Draw inside the house style when the helper owns the figure."""
+    signature = inspect.signature(func)
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if signature.bind(*args, **kwargs).arguments.get("ax") is not None:
+            return func(*args, **kwargs)
+        with style.context():
+            return func(*args, **kwargs)
+    return wrapper
+
+
+@_styled
 def plot_image(img, ax=None, cmap="afmhot", norm_to=None, colorbar=True,
                label=None, vmax=None):
     """Show an intensity map (paper Fig. 13 style).
@@ -21,32 +45,39 @@ def plot_image(img, ax=None, cmap="afmhot", norm_to=None, colorbar=True,
                    cmap=cmap, vmin=0.0, vmax=vmax, aspect="equal",
                    interpolation="bilinear")
     if colorbar:
-        ax.figure.colorbar(im, ax=ax, pad=0.02)
+        cb = ax.figure.colorbar(im, ax=ax, pad=0.02, fraction=0.035)
+        cb.outline.set_edgecolor(style.FAINT)
+        cb.outline.set_linewidth(0.6)
+        cb.ax.tick_params(color=style.FAINT, labelcolor=style.MUTED,
+                          direction="in")
+        cb.set_label(r"$I_{\rm obs}/I_{\rm max}$")
     if label:
-        ax.text(0.04, 0.08, label, transform=ax.transAxes, color="black",
-                fontsize=13, bbox=dict(facecolor="white", alpha=0.9,
-                                       boxstyle="round,pad=0.3"))
+        style.label(ax, label)
     return ax
 
 
+@_styled
 def plot_shadow(img, ax=None, analytic_xy=None):
-    """Black captured region on grey background (paper Fig. 6 style);
-    optionally overlay the analytic Bardeen rim as a red curve."""
+    """Black captured region on a pale field (paper Fig. 6 style);
+    optionally overlay the analytic Bardeen rim as a thin curve."""
     import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
 
     if ax is None:
         _, ax = plt.subplots(figsize=(6, 6))
     from .api import STATUS_CAPTURED
     mask = (img.status == STATUS_CAPTURED).T.astype(float)
-    ax.imshow(mask, origin="lower", extent=img.extent, cmap="binary",
+    ax.imshow(mask, origin="lower", extent=img.extent,
+              cmap=ListedColormap(["#d8d2c6", "#000000"]),
               vmin=0, vmax=1, aspect="equal")
     if analytic_xy is not None:
-        ax.plot(analytic_xy[0], analytic_xy[1], "r-", lw=1.2,
+        ax.plot(analytic_xy[0], analytic_xy[1], color=style.EMBER, lw=1.1,
                 label="Analytic solution")
-        ax.legend(loc="upper right", fontsize=8)
+        ax.legend(loc="upper right", fontsize=9, labelcolor="black")
     return ax
 
 
+@_styled
 def plot_orbits_2d(orbits, black_hole=None, plane="xy", ax=None,
                    colors=None, lw=0.9, legend=True):
     """2D projection of ray/particle orbits (paper Fig. 3/14 style).
@@ -85,17 +116,18 @@ def plot_orbits_2d(orbits, black_hole=None, plane="xy", ax=None,
     if black_hole is not None:
         th = np.linspace(0, 2*np.pi, 200)
         rh = black_hole.capture_radius
-        ax.fill(rh*np.cos(th), rh*np.sin(th), facecolor="white",
-                edgecolor="black", lw=1.2, zorder=3)
+        ax.fill(rh*np.cos(th), rh*np.sin(th), facecolor="black",
+                edgecolor=style.INK, lw=0.9, zorder=3)
     ax.set_aspect("equal")
     labels = {"xy": ("$x$", "$y$"), "xz": ("$x$", "$z$"),
               "yz": ("$y$", "$z$")}[plane]
     ax.set_xlabel(labels[0]); ax.set_ylabel(labels[1])
     if legend and any(isinstance(e, tuple) and e[1] for e in orbits):
-        ax.legend(loc="lower right", fontsize=8)
+        ax.legend(loc="lower right", fontsize=9)
     return ax
 
 
+@_styled
 def plot_lensing(img, ax=None, mesh_deg=6.0):
     """Celestial-sphere quadrant coloring (paper Figs. 9-12).
 

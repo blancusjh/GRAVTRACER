@@ -21,7 +21,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import grayt
+from grayt import style
 from grayt.animation import VideoWriter
+
+style.use()
 
 
 def build_index(output):
@@ -51,8 +54,8 @@ if(this.open&&!this.dataset.loaded){this.dataset.loaded='true';this.querySelecto
         coordinates = (
             '<!doctype html><html lang="en"><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            "<style>body{margin:0;background:#000;color:#dce4ef;font:16px/1.6 system-ui}"
-            ".interactive-plot{margin:18px 0;border-radius:12px;overflow:hidden}</style>"
+            "<style>body{margin:0;background:#000;color:#ece6da;font:17px/1.6 'STIX Two Text','Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif}"
+            ".interactive-plot{margin:18px 0;border-radius:4px;overflow:hidden}</style>"
             + interactive
             + "</html>"
         )
@@ -123,14 +126,14 @@ if(this.open&&!this.dataset.loaded){this.dataset.loaded='true';this.querySelecto
         """<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GRAVTRACER — stationary models</title>
-<style>body{background:#000;color:#dce4ef;font:16px/1.6 system-ui;margin:32px auto;max-width:1400px;padding:0 24px}
-h1{font-size:36px}h2{font-size:19px}a{color:#8fcaff}img,video{width:100%;height:auto;border-radius:8px}
-main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:24px}article{background:#111;padding:20px;border-radius:12px}
-p{color:#b9c5d6}.intro{max-width:960px;margin-bottom:32px}
+<style>body{background:#000;color:#ece6da;font:17px/1.6 'STIX Two Text','Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif;margin:32px auto;max-width:1400px;padding:0 24px}
+h1{font-size:38px;font-weight:400}h2{font-size:20px;font-weight:400}a{color:#f2b85a}img,video{width:100%;height:auto;border-radius:2px}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:24px}article{background:#0b0a09;border:1px solid #2a2826;padding:20px;border-radius:4px}
+p{color:#9a958c}.intro{max-width:960px;margin-bottom:32px}
 .interactive-section{margin:32px 0 48px}.interactive-section>h2{font-size:28px}
-.interactive-plot{background:#000;border:1px solid #333;border-radius:12px;overflow:hidden;margin:18px 0}
+.interactive-plot{background:#000;border:1px solid #2a2826;border-radius:4px;overflow:hidden;margin:18px 0}
 #coordinate-diagrams{margin:24px 0 40px}#coordinate-diagrams>summary{cursor:pointer;font-size:20px}
-.desktop-launch{display:inline-block;padding:8px 14px;background:#222;border:1px solid #555;border-radius:7px;text-decoration:none}
+.desktop-launch{display:inline-block;padding:8px 14px;background:#0d0c0b;border:1px solid #4a4640;border-radius:3px;text-decoration:none}
 #browser-preview{margin:24px 0}summary{cursor:pointer}
 </style>
 <h1>Stationary spacetimes and light</h1><div class="intro">
@@ -152,7 +155,7 @@ The volume example imports prescribed gray radiation coefficients, not a GRMHD s
 
 def models():
     cases = []
-    for spin, angles in [(0.0, (30, 70, 85)), (0.5, (30, 70)), (0.95, (30, 70, 85))]:
+    for spin, angles in [(0.0, (30, 70, 85)), (0.5, (30, 70, 85)), (0.95, (30, 70, 85))]:
         st = grayt.BlackHole(spin)
         disk = grayt.PageThorneDisk(st)
         for angle in angles:
@@ -237,16 +240,75 @@ def models():
 
 
 def save_panel(image, path, title, note):
-    fig, ax = plt.subplots(figsize=(10, 6), facecolor="black")
+    fig, ax = plt.subplots(figsize=(10, 6))
     image.plot(ax)
-    ax.set_title(title, color="white", loc="left", pad=14)
-    ax.set_facecolor("black")
-    ax.tick_params(colors="#aeb9c7")
-    ax.xaxis.label.set_color("#aeb9c7")
-    ax.yaxis.label.set_color("#aeb9c7")
-    fig.text(0.12, 0.025, note, color="#aeb9c7", fontsize=8)
+    style.frame(ax)
+    ax.set_title(title.replace(" | ", ",  "), pad=12)
+    fig.text(0.12, 0.025, note, color=style.MUTED, fontsize=9,
+             style="italic")
     fig.tight_layout(rect=(0, 0.045, 1, 1))
-    fig.savefig(path, dpi=130, facecolor=fig.get_facecolor())
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
+def plate(thumbnails, path):
+    """Two labelled blocks: Kerr spin x inclination, then other spacetimes."""
+    kerr = {slug: rgb for slug, _, rgb in thumbnails if slug.startswith("kerr_")}
+    captions = {"star_uniform": "Spherical star, $R = 5$ M",
+                "star_spots": "Spherical star, two hot spots",
+                "charged_q0.5": "Reissner–Nordström, $Q/M = 0.5$",
+                "charged_q0.8": "Reissner–Nordström, $Q/M = 0.8$",
+                "quadrupole_q0.3": "Zipoy–Voorhees, $q = 0.3$",
+                "quadrupole_q0.7": "Zipoy–Voorhees, $q = 0.7$"}
+    other = [(captions.get(slug, t), rgb) for slug, t, rgb in thumbnails
+             if not slug.startswith("kerr_")]
+    spins, angles = (0, 0.5, 0.95), (30, 70, 85)
+    ny, nx = thumbnails[0][2].shape[1], thumbnails[0][2].shape[0]
+    size = (20, 9.4)
+    w, gap, left, top = 0.163, 0.007, 0.06, 0.8
+    h = w * size[0] / size[1] * ny / nx          # keep the camera aspect
+    fig = plt.figure(figsize=size)
+
+    def tile(x, y, rgb, caption=None):
+        ax = fig.add_axes((x, y, w, h))
+        ax.imshow(rgb.transpose(1, 0, 2), origin="lower", aspect="auto",
+                  interpolation="lanczos")
+        ax.set_xticks([]); ax.set_yticks([])
+        style.frame(ax)
+        if caption:
+            ax.text(0.03, 0.04, caption, transform=ax.transAxes,
+                    color=style.INK, fontsize=11)
+        return ax
+
+    for i, spin in enumerate(spins):
+        y = top - (i + 1) * h - i * gap
+        fig.text(left - 0.012, y + h / 2, f"$a = {spin:g}$", color=style.INK,
+                 fontsize=14, ha="right", va="center")
+        for j, angle in enumerate(angles):
+            rgb = kerr.get(f"kerr_a{spin:g}_i{angle}")
+            if rgb is not None:
+                tile(left + j * (w + gap), y, rgb)
+    for j, angle in enumerate(angles):
+        fig.text(left + j * (w + gap) + w / 2, top + 0.012,
+                 f"$i$ = {angle}°", color=style.INK, fontsize=14,
+                 ha="center")
+    x0 = left + 3 * (w + gap) + 0.03
+    fig.text(left, top + 0.065, "Kerr black holes with Page–Thorne disks",
+             color=style.MUTED, fontsize=13, style="italic")
+    fig.text(x0, top + 0.065, "Other stationary spacetimes",
+             color=style.MUTED, fontsize=13, style="italic")
+    for k, (caption, rgb) in enumerate(other[:6]):
+        i, j = divmod(k, 2)
+        tile(x0 + j * (w + gap), top - (i + 1) * h - i * gap, rgb, caption)
+    fig.text(left, 0.925, "Stationary spacetimes and the light they bend",
+             color=style.INK, fontsize=26)
+    fig.text(left, 0.03,
+             "Kerr: Page–Thorne flux, Keplerian motion, bolometric $g^4$. "
+             "Stars and charged holes: prescribed emission. Zipoy–Voorhees: "
+             "lensed sky only. Sky: NASA SVS Deep Star Maps 2020. "
+             "Fixed display exposure; colors are a display mapping.",
+             color=style.MUTED, fontsize=10.5)
+    fig.savefig(path, dpi=130)
     plt.close(fig)
 
 
@@ -282,8 +344,9 @@ def ray_movie(path, frames=96):
     np.savez_compressed(
         path.with_suffix(".npz"), **{f"ray_{i}": v for i, v in enumerate(traces)}
     )
-    fig = plt.figure(figsize=(9.6, 7.2), dpi=100, facecolor="black")
-    ax = fig.add_subplot(111, projection="3d", facecolor="black")
+    fig = plt.figure(figsize=(9.6, 7.2), dpi=100)
+    ax = fig.add_subplot(111, projection="3d")
+    style.dark_3d(ax, axes_visible=True)
     angle = np.linspace(0, 2 * np.pi, 100)
     radius = np.linspace(st.isco, 20, 14)
     aa, rr = np.meshgrid(angle, radius)
@@ -291,8 +354,8 @@ def ray_movie(path, frames=96):
         rr * np.cos(aa),
         rr * np.sin(aa),
         rr * 0,
-        color="#c36b2c",
-        alpha=0.28,
+        color=style.AMBER,
+        alpha=0.2,
         linewidth=0,
     )
     u, v = np.meshgrid(np.linspace(0, 2 * np.pi, 40), np.linspace(0, np.pi, 24))
@@ -301,15 +364,18 @@ def ray_movie(path, frames=96):
         rh * np.cos(u) * np.sin(v),
         rh * np.sin(u) * np.sin(v),
         rh * np.cos(v),
-        color="#050505",
+        color="#000000",
+        edgecolor="#4a4640",
+        linewidth=0.15,
     )
     for i, pts in enumerate(traces):
         ax.plot(
-            *pts.T, color=plt.cm.plasma(0.2 + 0.7 * i / len(traces)), lw=1.25, alpha=0.9
+            *pts.T, color=plt.cm.YlOrBr(0.25 + 0.6 * i / len(traces)), lw=1.1, alpha=0.9
         )
     observer = traces[0][0]
-    ax.scatter(*observer, color="white", s=35)
-    ax.text(*observer, "  observer", color="white", fontsize=9)
+    ax.scatter(*observer, color=style.INK, s=30)
+    ax.text(*observer, "  observer", color=style.MUTED, fontsize=10,
+            style="italic")
     ax.set(
         xlim=(-50, 50),
         ylim=(-50, 50),
@@ -319,19 +385,14 @@ def ray_movie(path, frames=96):
         zlabel="z / M",
     )
     ax.set_box_aspect((1, 1, 1))
-    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
-        axis.label.set_color("#c0cadd")
-        axis.set_pane_color((0, 0, 0, 1))
-    ax.tick_params(colors="#c0cadd")
-    ax.set_title(
-        "Kerr a=0.8 | null geodesics around a flat disk", color="white", pad=18
-    )
+    ax.set_title("Null geodesics around a flat disk, Kerr $a = 0.8$", pad=18)
     fig.text(
         0.09,
         0.045,
         "Spherical coordinate embedding; distances are not proper distances.",
-        color="#b0bdcf",
+        color=style.MUTED,
         fontsize=10,
+        style="italic",
     )
     with VideoWriter(path, (960, 720), 24) as writer:
         for k in range(frames):
@@ -341,7 +402,7 @@ def ray_movie(path, frames=96):
             fig.canvas.draw()
             writer.write(np.asarray(fig.canvas.buffer_rgba())[..., :3].copy())
             if k == 0:
-                fig.savefig(path.with_suffix(".png"), facecolor=fig.get_facecolor())
+                fig.savefig(path.with_suffix(".png"))
     plt.close(fig)
     path.with_suffix(".json").write_text(
         json.dumps(
@@ -403,29 +464,9 @@ def main():
                 "metadata": image.meta,
             }
         )
-        thumbnails.append((title, image.rgb.copy()))
+        thumbnails.append((slug, title, image.rgb.copy()))
         print(f"{slug}: {counts}; {records[-1]['seconds']:.1f}s", flush=True)
-    fig, axes = plt.subplots(4, 4, figsize=(20, 13), facecolor="black")
-    for ax, (title, rgb) in zip(axes.ravel(), thumbnails):
-        ax.imshow(rgb.transpose(1, 0, 2), origin="lower")
-        ax.set_title(title, color="white", fontsize=10)
-        ax.axis("off")
-    for ax in axes.ravel()[len(thumbnails) :]:
-        ax.axis("off")
-    fig.suptitle(
-        "GRAVTRACER | stationary geometries and prescribed radiation",
-        color="white",
-        fontsize=19,
-    )
-    fig.text(
-        0.04,
-        0.025,
-        "Kerr panels: Page-Thorne + Keplerian motion. Stellar and charged panels: prescribed emission. Sky: NASA SVS. Fixed display exposure.",
-        color="#b9c3d2",
-    )
-    fig.tight_layout(rect=(0, 0.045, 1, 0.97))
-    fig.savefig(args.output / "gallery.png", dpi=130)
-    plt.close(fig)
+    plate(thumbnails, args.output / "gallery.png")
     (args.output / "manifest.json").write_text(json.dumps(records, indent=2) + "\n")
     if not args.skip_videos:
         frames = 12 if args.quick else 96
@@ -437,7 +478,7 @@ def main():
                 grayt.PageThorneDisk(grayt.BlackHole(0.8)),
                 None,
             ),
-            ("stellar_camera_orbit", grayt.SphericalStar(5), None, models()[9][4]),
+            ("stellar_camera_orbit", grayt.SphericalStar(5), None, next(m[4] for m in models() if m[0] == "star_spots")),
             ("quadrupole_camera_orbit", grayt.QMetric(0.5), None, None),
         ]:
             print(f"Rendering {name} ({frames} frames)", flush=True)

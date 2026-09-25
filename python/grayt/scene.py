@@ -491,7 +491,7 @@ def _photometric(image, photometry, sky, levels):
         return image
     from .photometry import photometric_render
 
-    keys = ("floor", "knee", "white", "disk_decades")
+    keys = ("floor", "knee", "white", "disk_decades", "white_point")
     fixed = {k: v for k, v in (levels or {}).items() if k in keys}
     _, image.rgb, used = photometric_render(image, photometry, sky, **fixed)
     image.meta["display"] = {"photometry": photometry.metadata(),

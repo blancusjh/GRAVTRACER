@@ -138,6 +138,12 @@ of a false-color map:
   splits the lightness range between the starlight, the gap up to the
   dimmest disk light, and the disk's top four decades. Pass the returned
   `meta["display"]` as `levels` to keep a movie's exposure fixed.
+- **White balance:** `white_point="scene"` (default) adapts to the
+  luminance-weighted mean color of the emission with a Bradford transform,
+  as a camera or an adapted eye would. The hottest gas then renders white
+  instead of the pale blue that any blackbody above about 3e4 K shows under
+  daylight (D65) balance, which `white_point="D65"` keeps. One matrix is
+  applied to the whole image.
 
 A steady thin disk has no outer edge, and truncating it at some `r_out`
 draws one. `grayt.spreading_disk(spacetime, r_c, tau_c)` uses the outer

@@ -211,6 +211,20 @@ def sky_xyz(sky, theta, phi, mu_v=23.0):
     return (rgb @ RGB_TO_XYZ.T) * scale
 
 
+BRADFORD = np.array([[0.8951, 0.2664, -0.1614],
+                     [-0.7502, 1.7135, 0.0367],
+                     [0.0389, -0.0685, 1.0296]])
+D65 = np.array([0.95047, 1.0, 1.08883])
+
+
+def adaptation_matrix(source_white, target_white=D65):
+    """Bradford chromatic adaptation: XYZ under source white -> target."""
+    src = BRADFORD @ (np.asarray(source_white, float)
+                      / np.asarray(source_white, float)[1])
+    dst = BRADFORD @ (np.asarray(target_white, float) / target_white[1])
+    return np.linalg.inv(BRADFORD) @ np.diag(dst / src) @ BRADFORD
+
+
 def tone_curve(y, floor, knee, white, disk_decades=4.0):
     """Global monotonic lightness in [0, 1], piecewise linear in log10(Y)."""
     logy = np.log10(np.maximum(y, 1e-300))
@@ -242,13 +256,20 @@ def compose(xyz, floor, knee, white, disk_decades=4.0):
 
 
 def photometric_render(image, photometry, sky=None, *, floor=None, knee=None,
-                       white=None, disk_decades=4.0):
+                       white=None, disk_decades=4.0, white_point="scene"):
     """Calibrated XYZ and display RGB for a rendered scene.
 
     ``image`` must come from ``render_scene`` (it carries the emission
     layers). Defaults: floor = 0.05 x mean sky, knee = 1000 x mean sky
     (bright stars), white = 99.5th percentile of the emission luminance;
     the disk's top ``disk_decades`` get the upper half of the lightness.
+
+    ``white_point`` sets the white balance, as a camera or an adapted eye
+    would: "scene" (default) adapts to the luminance-weighted mean color of
+    the emission, which then renders white; "D65" keeps daylight balance,
+    under which a >3e4 K blackbody is pale blue; or give an XYZ triple.
+    One Bradford adaptation matrix is applied to the whole image, so hue
+    differences between disk regions and sky are preserved.
     Pass the returned levels back in to keep a movie's exposure fixed.
     Returns (xyz (nx,ny,3), rgb (nx,ny,3), levels dict).
     """
@@ -270,6 +291,17 @@ def photometric_render(image, photometry, sky=None, *, floor=None, knee=None,
         if transmission is not None:
             background *= transmission[esc][:, None]
         xyz[esc] += background
+    if isinstance(white_point, str) and white_point == "scene":
+        weight = emission[..., 1]
+        adapt = (np.sum(emission, axis=(0, 1)) if weight.sum() > 0 else D65)
+    elif isinstance(white_point, str) and white_point.upper() == "D65":
+        adapt = D65
+    else:
+        adapt = np.asarray(white_point, float)
+    if np.all(np.isfinite(adapt)) and adapt[1] > 0:
+        cat = adaptation_matrix(adapt)
+        xyz = xyz @ cat.T
+        emission = emission @ cat.T
     disk_y = emission[..., 1][emission[..., 1] > 0]
     levels = {
         "floor": floor or 0.05 * sky_mean,
@@ -278,6 +310,7 @@ def photometric_render(image, photometry, sky=None, *, floor=None, knee=None,
                            else 1e6 * sky_mean),
         "disk_decades": disk_decades,
         "sky_mean_Y": sky_mean,
+        "white_point": (np.asarray(adapt) / adapt[1]).tolist(),
     }
     rgb = compose(xyz, levels["floor"], levels["knee"], levels["white"],
                   disk_decades)

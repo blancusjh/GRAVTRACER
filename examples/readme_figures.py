@@ -53,12 +53,12 @@ def disk_figure():
     fig.text(0.07, 0.945, "Kerr black hole, $a = 0.95$", color=INK,
              fontsize=21, va="top")
     fig.text(0.07, 0.895, "Thin accretion disk at 76° inclination in true "
-             "blackbody colors, with the Milky Way lensed around the hole",
+             "blackbody colors (scene white balance), with the Milky Way lensed around it",
              color=MUTED, fontsize=12.5, style="italic", va="top")
     fig.text(0.07, 0.03, "$10^8\\,M_\\odot$ at 0.1 $L_{\\rm Edd}$; spreading thin disk "
              "(Page–Thorne inside, $r_c = 8$ M), blackbody at $gT$; calibrated sky "
              "(NASA SVS Deep Star Maps 2020). Observer at $r = 400$ M; one global "
-             "monotonic tone curve.", color=MUTED, fontsize=9.5)
+             "monotonic tone curve; white balanced on the disk light.", color=MUTED, fontsize=9.5)
     fig.savefig(IMAGES / "kerr_disk.png", dpi=185)
     plt.close(fig)
 

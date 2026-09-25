@@ -79,3 +79,12 @@ def test_render_scene_photometry_is_display_only():
                                photometry=P.Photometry(spin=0.9),
                                levels=phot.meta["display"])
     np.testing.assert_allclose(again.rgb, phot.rgb)
+
+
+def test_scene_white_balance_neutralizes_the_emission():
+    """Bradford adaptation maps the adapting white exactly to D65."""
+    white = P.blackbody_xyz(np.array([1e5]))[0]
+    cat = P.adaptation_matrix(white)
+    np.testing.assert_allclose(cat @ (white / white[1]), P.D65, rtol=1e-10)
+    rgb = P.XYZ_TO_RGB @ (cat @ white)
+    assert np.ptp(rgb / rgb.max()) < 1e-3     # neutral: R = G = B

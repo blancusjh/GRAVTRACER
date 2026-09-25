@@ -15,7 +15,8 @@ each part glows as a blackbody at its temperature, seen at the redshifted
 temperature g T, and the gas turns transparent as it cools, so it fades into
 the lensed Milky Way. The sky ([NASA SVS Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/))
 is calibrated to real surface brightness and sampled along each ray's
-direction at infinity. One global, monotonic tone curve maps it all.*
+direction at infinity. One global, monotonic tone curve maps it all, white
+balanced on the disk's light as an adapted eye or camera would be.*
 
 ## Install
 

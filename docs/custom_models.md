@@ -84,8 +84,13 @@ first) and continues to the sky or the horizon. At crossing k the photon
 meets the slab at angle `eta` to its normal in the comoving frame, so it sees
 `tau_k = tau_perp / cos(eta)` and receives `g^4 S (1 - exp(-tau_k))`, attenuated
 by the optical depth of the crossings in front of it. The sky is attenuated by
-`exp(-sum tau_k)`. Here `S` is the wrapped disk's intensity, used as the
-slab's source function, and `g` comes from its four-velocity.
+`exp(-sum tau_k)`. Here `g` comes from the disk's four-velocity. By default
+(`conserve_flux=True`) the isotropic source function is
+`S = I_disk / (1 - 2 E_3(tau_perp))`, so each face of the slab emits exactly the
+opaque disk's flux `pi I_disk`, which for Page–Thorne is the locally
+dissipated energy, at any optical depth. Thin regions are fainter face-on and
+limb-brightened edge-on, but radiate the same energy. `conserve_flux=False`
+uses `S = I_disk` instead.
 
 As `tau_perp` goes to infinity this reproduces the opaque disk exactly
 (`tests/test_slab.py`); as it goes to zero the disk vanishes. With a
@@ -100,6 +105,17 @@ over `decades` (default 2.5) below white, so Doppler-boosted and dim sides of
 a disk stay readable together. The raw `intensity` map is unchanged.
 `CelestialSky.nasa_starmap(gain=...)` brightens the display sky in the same
 display-only sense.
+
+### Sky directions
+
+Rays stop on a finite escape sphere. Scene renderers sample the sky along each
+escaped ray's asymptotic direction: the photon momentum at the sphere, mapped
+to the pseudo-Cartesian embedding. They do not use the stopping position,
+which carries a parallax error of order `camera.r / escape_radius` (about 7° for
+a camera at 100 M and a sphere at 200 M). Directions agree with a
+20 000 M sphere to 0.004° for Kerr (`tests/test_slab.py`). `SceneImage.theta_inf`
+and `phi_inf` return these directions. The legacy `grayt.render` path keeps
+the paper's position-based convention.
 
 `CelestialSky.nasa_starmap()` loads the bundled NASA Scientific Visualization
 Studio [Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/) image, based on star

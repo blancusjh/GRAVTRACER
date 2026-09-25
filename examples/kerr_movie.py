@@ -1,7 +1,11 @@
-"""Fly once around a Kerr black hole while its disk turns.
+"""Views from all around a Kerr black hole while its disk turns.
 
-The camera circles the hole in azimuth and rocks between 60 and 84 degrees
-of inclination, so the lensed Milky Way streams around the Einstein ring.
+Frame k is what a stationary (ZAMO) observer at r = 100 M sees at
+coordinate time t_k = k dt, placed at successive azimuths and inclinations
+between 60 and 84 degrees, so the lensed Milky Way streams around the
+Einstein ring. It is a sequence of observers, not one moving camera: a
+single camera covering 360 degrees in this time would exceed light speed,
+and a physically moving camera would also see aberration.
 The disk is a translucent Page-Thorne slab (SlabDisk): opaque near the
 ISCO, optically thin further out, so starlight passes through it and every
 disk crossing of every ray is counted.
@@ -10,10 +14,10 @@ To make the rotation visible, the disk carries hot spots whose brightness
 pattern is advected with the Keplerian angular velocity of the same
 circular-geodesic flow that sets the Doppler shifts. Differential rotation
 shears them into spiral arcs. This is a prescribed pattern, not MHD.
-Each frame is rendered at observer time t = k * dt, and emission times
-include the light travel time along each ray.
+Emission times include the light travel time along each ray, and the
+sky is sampled along each ray's asymptotic direction.
 
-Writes an MP4 (needs ffmpeg) and a small animated WebP for the README.
+Writes an MP4 and optionally a slowed-down GIF for the README (ffmpeg).
 
 Usage: python examples/kerr_movie.py [--frames N] [--res NX NY] [--ss S]
 """
@@ -25,6 +29,9 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
+import shutil
+import subprocess
+
 from PIL import Image, ImageDraw, ImageFont
 
 from _common import out
@@ -85,7 +92,8 @@ def caption(frame, camera, t, font, small):
     draw.text((0.03 * w, 0.035 * h), "Kerr black hole, a = 0.9", fill=ink,
               font=font)
     draw.text((0.03 * w, 0.035 * h + 1.35 * font.size),
-              "translucent Page–Thorne slab with Keplerian hot spots",
+              "translucent Page–Thorne slab with Keplerian hot spots; "
+              "stationary observers at r = 100 M",
               fill=muted, font=small)
     draw.text((0.03 * w, 0.93 * h),
               f"i = {camera.theta:4.1f}°    φ = {camera.phi:5.1f}°    "
@@ -102,9 +110,11 @@ def main():
                     help="observer coordinate time per frame [M]")
     ap.add_argument("--fps", type=int, default=24)
     ap.add_argument("-o", "--output", default=out("kerr_orbit.mp4"))
-    ap.add_argument("--webp", default=None,
-                    help="also write an animated WebP preview here")
-    ap.add_argument("--webp-width", type=int, default=480)
+    ap.add_argument("--gif", default=None,
+                    help="also write a GIF preview here (needs ffmpeg)")
+    ap.add_argument("--gif-width", type=int, default=560)
+    ap.add_argument("--gif-slowdown", type=float, default=1.5,
+                    help="play the GIF this many times slower than the MP4")
     args = ap.parse_args()
 
     bh = grayt.BlackHole(SPIN)
@@ -115,7 +125,6 @@ def main():
     font = ImageFont.truetype(face, max(12, args.res[1] // 18))
     small = ImageFont.truetype(face, max(10, args.res[1] // 30))
 
-    preview = []
     started = time.time()
     with VideoWriter(args.output, tuple(args.res), args.fps) as writer:
         for k, camera in enumerate(cameras(args.frames, tuple(args.res))):
@@ -129,20 +138,30 @@ def main():
             frame = caption(display_frame(image.rgb, args.ss), camera, t,
                             font, small)
             writer.write(frame)
-            if args.webp and k % 2 == 0:
-                w = args.webp_width
-                preview.append(Image.fromarray(frame).resize(
-                    (w, w * args.res[1] // args.res[0]), Image.LANCZOS))
             elapsed = time.time() - started
             print(f"frame {k + 1}/{args.frames}  {elapsed / (k + 1):.1f} s/frame",
                   flush=True)
     print(f"wrote {args.output}")
-    if args.webp:
-        Path(args.webp).parent.mkdir(parents=True, exist_ok=True)
-        preview[0].save(args.webp, save_all=True, append_images=preview[1:],
-                        duration=int(2000 / args.fps), loop=0, quality=72,
-                        method=6)
-        print(f"wrote {args.webp}")
+    if args.gif:
+        write_gif(args.output, args.gif, args.gif_width, args.fps,
+                  args.gif_slowdown)
+        print(f"wrote {args.gif}")
+
+
+def write_gif(mp4, gif, width, fps, slowdown):
+    """Two-pass palette GIF from the MP4, played ``slowdown`` times slower.
+    Every frame is kept; only the display time per frame grows."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise RuntimeError("GIF export requires ffmpeg on PATH")
+    Path(gif).parent.mkdir(parents=True, exist_ok=True)
+    scale = f"fps={fps / slowdown:g},scale={width}:-2:flags=lanczos"
+    subprocess.run(
+        [ffmpeg, "-loglevel", "error", "-y", "-i", str(mp4), "-filter_complex",
+         f"[0:v]setpts={slowdown:g}*PTS,{scale},split[a][b];"
+         "[a]palettegen=max_colors=192:stats_mode=full[p];"
+         "[b][p]paletteuse=dither=sierra2_4a", str(gif)],
+        check=True)
 
 
 if __name__ == "__main__":

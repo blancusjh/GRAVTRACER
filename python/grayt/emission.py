@@ -237,11 +237,40 @@ class TabulatedDisk(EmittingDisk):
             return cls(d["radius"], d["intensity"], d["omega"], name=str(d["name"]))
 
 
+_E3_TAU = None
+_E3_ESCAPE = None
+
+
+def slab_escape_fraction(tau):
+    """1 - 2 E_3(tau): emergent flux of a gray isothermal slab in units of pi S.
+
+    Computed as 2 int_0^1 mu (1 - exp(-tau/mu)) dmu, tabulated once on a
+    log grid (exact to ~1e-7 relative) and interpolated in log-log. It tends
+    to 2 tau (thin) and to 1 (thick).
+    """
+    global _E3_TAU, _E3_ESCAPE
+    if _E3_TAU is None:
+        grid = np.logspace(-9, 3, 1201)
+        x, w = np.polynomial.legendre.leggauss(400)
+        # map [-1, 1] -> [0, 1] with mu = u^2 to resolve the mu ~ tau corner
+        u = 0.5 * (x + 1)
+        mu, weight = u**2, w * u        # dmu = 2u du, du = dx/2
+        vals = 2 * np.sum(weight * mu * -np.expm1(-grid[:, None] / mu), axis=1)
+        _E3_TAU, _E3_ESCAPE = np.log(grid), np.log(vals)
+    tau = np.asarray(tau, float)
+    small = tau < 1e-9
+    big = tau > 1e3
+    t = np.clip(tau, 1e-9, 1e3)
+    out = np.exp(np.interp(np.log(t), _E3_TAU, _E3_ESCAPE))
+    out = np.where(small, 2 * tau, out)
+    return np.where(big, 1.0, out)
+
+
 @dataclass
 class SlabDisk:
     """A geometrically thin, gray emitting slab of finite optical depth.
 
-    ``disk`` supplies the source function S(r, phi, t) (its ``intensity``)
+    ``disk`` gives the emission I_disk(r, phi, t) of the opaque surface
     and the material four-velocity. ``optical_depth(r, phi)`` is the
     vertical optical depth tau_perp of the slab (a number or a callable).
     A ray crossing the slab at angle eta to its normal, measured in the
@@ -250,15 +279,21 @@ class SlabDisk:
     Every crossing along the ray (all image orders, up to
     ``max_crossings``) and the celestial background are combined.
 
-    tau_perp -> infinity reproduces the opaque ``disk`` exactly; a finite
-    tau_perp that falls with radius gives a disk that fades smoothly and
-    lets lensed starlight through where it is optically thin. The slab
+    With ``conserve_flux=True`` (default) the slab's isotropic source
+    function is S = I_disk / (1 - 2 E_3(tau_perp)), so each face emits
+    exactly the flux pi I_disk of the opaque disk (for Page-Thorne, the
+    locally dissipated flux) at any optical depth: thin regions are
+    fainter face-on and limb-brightened edge-on, but radiate the same
+    energy. With ``conserve_flux=False``, S = I_disk.
+
+    tau_perp -> infinity reproduces the opaque ``disk`` exactly. The slab
     has zero geometric thickness: no self-occultation by its height.
     """
 
     disk: EmittingDisk
     optical_depth: object = 1.0
     max_crossings: int = 6
+    conserve_flux: bool = True
     name: str = "gray thin slab"
 
     def __post_init__(self):
@@ -289,10 +324,18 @@ class SlabDisk:
             raise ValueError("optical depth must be finite and nonnegative")
         return tau
 
+    def source_function(self, r, phi, t):
+        """Isotropic comoving source function S of the slab."""
+        emission = np.asarray(self.disk.intensity(r, phi, t), float)
+        if not self.conserve_flux:
+            return emission
+        return emission / slab_escape_fraction(self.tau_perp(r, phi))
+
     def metadata(self):
         return {
             "type": type(self).__name__,
             "name": self.name,
+            "conserve_flux": bool(self.conserve_flux),
             "source": self.disk.metadata(),
             "optical_depth": getattr(self.optical_depth, "__doc__", None)
             if callable(self.optical_depth) else float(self.optical_depth),

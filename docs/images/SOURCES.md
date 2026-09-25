@@ -18,3 +18,6 @@ code, the bundled NASA sky map, and the engraving in `examples/assets/`. `model_
 `examples/model_gallery.py`.
 Disk colors are display mappings. The Kerr rays use a pseudo-Cartesian
 coordinate embedding.
+
+`../animations/kerr_orbit.mp4` and `kerr_orbit.gif` are rendered by
+`examples/kerr_movie.py`. The GIF is the MP4 played 1.5 times slower.

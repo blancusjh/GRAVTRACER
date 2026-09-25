@@ -13,7 +13,7 @@ import numpy as np
 
 from ._runtime import metric_context, metadata
 from .emission import metric_samples, frequency_shift
-from .scene import trace_bundle, SceneImage
+from .scene import trace_bundle, SceneImage, escape_directions
 from .sky import compose_rgb
 
 
@@ -307,20 +307,18 @@ def render_volume(
             )
             g = frequency_shift(spacetime, r, th, momentum, u)
             intensity[i, k], tau[i, k] = integrate_gray(j, a, g, dl[inside] / g)
+    directions = escape_directions(rays, spacetime)
     rgb = compose_rgb(
         intensity,
         rays.status,
-        rays.endpoint[..., 2],
-        rays.endpoint[..., 3],
+        *directions,
         None,
         exposure=exposure,
     )
     # The map is uncalibrated RGB: its attenuation is illustrative only.
     if sky is not None:
         mask = rays.status == 0
-        background = sky.sample(
-            rays.endpoint[..., 2][mask], rays.endpoint[..., 3][mask]
-        )
+        background = sky.sample(directions[0][mask], directions[1][mask])
         rgb[mask] = np.clip(rgb[mask] + background * np.exp(-tau[mask, None]), 0, 1)
     meta = {
         **rays.meta,
@@ -331,7 +329,9 @@ def render_volume(
         "radiation": "gray bolometric; midpoint quadrature; no scattering",
     }
     # Optical depth is retained as a distinct map, never overloaded into g.
-    return VolumeImage(rays, intensity, np.zeros(camera.resolution), rgb, meta, tau)
+    image = VolumeImage(rays, intensity, np.zeros(camera.resolution), rgb, meta, tau)
+    image._dirs = directions
+    return image
 
 
 @dataclass
@@ -348,6 +348,8 @@ class VolumeImage(SceneImage):
     def load(cls, path):
         img = SceneImage.load(path)
         with np.load(path, allow_pickle=False) as d:
-            return cls(
+            image = cls(
                 img.rays, img.intensity, img.g, img.rgb, img.meta, d["optical_depth"]
             )
+        image._dirs = getattr(img, "_dirs", None)
+        return image

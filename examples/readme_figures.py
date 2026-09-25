@@ -29,7 +29,7 @@ style.use()
 def disk_figure():
     spacetime = grayt.BlackHole(a=0.95)
     camera = grayt.Camera(
-        r=100, theta=76, phi=90, x=(-40, 40), y=(-25, 25), resolution=(1120, 700)
+        r=100, theta=76, phi=90, x=(-40, 40), y=(-25, 25), resolution=(2240, 1400)
     )
     disk = grayt.SlabDisk(grayt.PageThorneDisk(spacetime, r_out=60),
                           lambda r, phi: 2.0 * (6.0 / r) ** 2)
@@ -54,7 +54,7 @@ def disk_figure():
     fig.text(0.07, 0.895, "Translucent Page–Thorne disk at 76° inclination, "
              "with the Milky Way lensed into an Einstein ring behind it",
              color=MUTED, fontsize=12.5, style="italic", va="top")
-    fig.text(0.07, 0.03, "Gray thin slab, $\\tau_\\perp = 2\\,(6M/r)^2$, "
+    fig.text(0.07, 0.03, "Flux-conserving gray thin slab, $\\tau_\\perp = 2\\,(6M/r)^2$, "
              "transfer at every disk crossing. Log display over 2.5 decades; "
              "colors are a display mapping, not spectra. "
              "Sky: NASA SVS Deep Star Maps 2020.", color=MUTED, fontsize=9.5)

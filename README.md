@@ -8,9 +8,10 @@ geodesic core powers the Python package `grayt` and the `gravtracer` CLI.
 
 ![A lensed Page–Thorne disk around a spinning Kerr black hole](docs/images/kerr_disk.png)
 
-*Kerr black hole, spin 0.95, viewed at 76°. The disk is a translucent
-Page–Thorne slab: opaque near the hole and optically thin further out, so the
-lensed Milky Way behind it shows through. The background uses
+*Kerr black hole, spin 0.95, viewed at 76°. The disk is a translucent,
+flux-conserving Page–Thorne slab: opaque near the hole and optically thin
+further out, so the lensed Milky Way behind it shows through. The sky is
+sampled along each ray's direction at infinity. The background uses
 [NASA SVS Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/); disk colors are a
 display mapping, not measured spectra.*
 
@@ -77,12 +78,14 @@ Zipoy–Voorhees exteriors. Every camera looks toward the Milky Way's core, so
 the bending of light shows in the distorted star field and its Einstein ring.
 Disk and surface colors are display mappings.*
 
-![A camera orbits a Kerr black hole while hot spots in its disk wind into spirals](docs/images/kerr_orbit.webp)
+![Views from all around a Kerr black hole while hot spots in its disk wind into spirals](docs/animations/kerr_orbit.gif)
 
-*One orbit around a Kerr black hole, spin 0.9. Hot spots in the disk are
-advected with the Keplerian flow and shear into spiral arcs, and each frame
-includes the light-travel delay to every disk element. The pattern is
-prescribed, not MHD. Run `python examples/kerr_movie.py` for the full MP4.*
+*Kerr black hole, spin 0.9, seen by stationary observers at r = 100 M placed
+all around it ([MP4](docs/animations/kerr_orbit.mp4)). Each frame is one
+observer at a later coordinate time, not a single moving camera. Hot spots in
+the disk are advected with the Keplerian flow and shear into spiral arcs, and
+light-travel delays to every disk element are included. The pattern is
+prescribed, not MHD. Made with `python examples/kerr_movie.py`.*
 
 ![A camera photographs an engraving behind a Kerr black hole through traced null geodesics](docs/images/image_formation_scene.png)
 

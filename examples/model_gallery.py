@@ -288,7 +288,7 @@ def plate(thumbnails, path):
     def tile(x, y, rgb, caption=None):
         ax = fig.add_axes((x, y, w, h))
         ax.imshow(rgb.transpose(1, 0, 2), origin="lower", aspect="auto",
-                  interpolation="lanczos")
+                  interpolation="antialiased")
         ax.set_xticks([]); ax.set_yticks([])
         style.frame(ax)
         if caption:
@@ -321,7 +321,7 @@ def plate(thumbnails, path):
     fig.text(left, 0.925, "Stationary spacetimes and the light they bend",
              color=style.INK, fontsize=26)
     fig.text(left, 0.03,
-             "Disks: gray thin slabs, $\\tau_\\perp = 2\\,(6M/r)^2$, every crossing "
+             "Disks: flux-conserving gray thin slabs, $\\tau_\\perp = 2\\,(6M/r)^2$, every crossing "
              "counted; Kerr source function Page–Thorne. Stars and charged holes: "
              "prescribed emission. Sky: NASA SVS Deep Star Maps 2020, lensed. "
              "Fixed log display, 2.5 decades.",
@@ -455,7 +455,9 @@ def main():
         phi=90,
         x=(-40, 40),
         y=(-25, 25),
-        resolution=(192, 120) if args.quick else (640, 400),
+        # 2x the displayed tile resolution: the plate's resampling averages
+        # four rays per displayed pixel (anti-aliasing near the photon ring).
+        resolution=(192, 120) if args.quick else (1280, 800),
     )
     records = []
     thumbnails = []

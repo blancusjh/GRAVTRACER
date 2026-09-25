@@ -55,11 +55,21 @@ class SceneImage:
 
     @property
     def theta_inf(self):
-        return self.rays.endpoint[..., 2]
+        """Asymptotic direction (polar angle) of escaped rays."""
+        return self._directions()[0]
 
     @property
     def phi_inf(self):
-        return self.rays.endpoint[..., 3]
+        """Asymptotic direction (azimuth) of escaped rays."""
+        return self._directions()[1]
+
+    def _directions(self):
+        # Set by the renderers (and by load); archives written before
+        # directions were stored fall back to the escape-sphere position.
+        dirs = getattr(self, "_dirs", None)
+        if dirs is None:
+            return self.rays.endpoint[..., 2], self.rays.endpoint[..., 3]
+        return dirs
 
     @property
     def extent(self):
@@ -86,6 +96,8 @@ class SceneImage:
             intensity=self.intensity,
             g=self.g,
             rgb=self.rgb,
+            theta_dir=self.theta_inf,
+            phi_dir=self.phi_inf,
             metadata=json.dumps(self.meta),
             ray_metadata=json.dumps(self.rays.meta),
         )
@@ -101,9 +113,67 @@ class SceneImage:
                 tuple(d["extent"]),
                 json.loads(str(d["ray_metadata"])),
             )
-            return cls(
+            image = cls(
                 rays, d["intensity"], d["g"], d["rgb"], json.loads(str(d["metadata"]))
             )
+            if "theta_dir" in d.files:
+                image._dirs = (d["theta_dir"], d["phi_dir"])
+            return image
+
+
+def _metric_on_sphere(spacetime, r, theta):
+    """Covariant metric at points that share (almost) one radius.
+
+    Kerr is evaluated in closed form. Other metrics are sampled on a fine
+    theta grid at that radius and interpolated, which avoids a Python loop
+    over every pixel; all escape points lie on the same sphere.
+    """
+    if spacetime.mid == 1 or r.size == 0:
+        return metric_samples(spacetime, r, theta)
+    radius = float(np.median(r))
+    if np.max(np.abs(r - radius)) > 1e-6 * radius:
+        return metric_samples(spacetime, r, theta)
+    grid = np.linspace(0.0, np.pi, 4097)
+    table = np.array([spacetime.metric_cov(radius, float(t)) for t in grid])
+    th = np.arccos(np.clip(np.cos(theta), -1, 1))
+    return np.stack([np.interp(th, grid, table[:, k]) for k in range(5)], -1)
+
+
+def escape_directions(rays, spacetime):
+    """Asymptotic propagation direction (theta, phi) of escaped rays.
+
+    The tracer stops on a finite escape sphere. Sampling a sky map at the
+    stopping *position* adds a parallax error of order camera.r / r_escape
+    (several degrees for r_escape = 2 camera.r). Instead, take the photon's
+    spatial momentum there, map it to the pseudo-Cartesian embedding, and
+    use its direction: that is where the ray points at infinity, up to the
+    small residual deflection O(M / r_escape) beyond the sphere.
+    Non-escaped pixels keep their endpoint angles.
+    """
+    ep, mom = rays.endpoint, rays.momenta
+    theta = ep[..., 2].copy()
+    phi = ep[..., 3].copy()
+    esc = rays.status == 0
+    if not esc.any():
+        return theta, phi
+    r, th, ph, pr, pth = (ep[..., k][esc] for k in (1, 2, 3, 4, 5))
+    pt, pph = mom[..., 0][esc], mom[..., 1][esc]
+    gd = _metric_on_sphere(spacetime, r, th)
+    gtt, gtp, grr, gthth, gpp = (gd[..., k] for k in range(5))
+    det = gtt * gpp - gtp**2
+    ur, uth = pr / grr, pth / gthth
+    uph = (gtt * pph - gtp * pt) / det
+    s, c = np.sin(th), np.cos(th)
+    cp, sp = np.cos(ph), np.sin(ph)
+    v = np.stack((s * cp * ur + r * c * cp * uth - r * s * sp * uph,
+                  s * sp * ur + r * c * sp * uth + r * s * cp * uph,
+                  c * ur - r * s * uth), axis=-1)
+    outward = np.sum(v * np.stack((s * cp, s * sp, c), axis=-1), axis=-1)
+    v *= np.where(outward < 0, -1.0, 1.0)[:, None]   # covector sign convention
+    v /= np.linalg.norm(v, axis=-1)[:, None]
+    theta[esc] = np.arccos(np.clip(v[:, 2], -1, 1))
+    phi[esc] = np.arctan2(v[:, 1], v[:, 0])
+    return theta, phi
 
 
 @metric_context
@@ -191,6 +261,7 @@ def trace_bundle(
             "backend": "Fortran CPU fp64",
             "coordinates": "t,r,theta,phi; G=c=M=1; angles radians",
             "momentum_convention": "legacy past-oriented covector; E_obs=1",
+            "sky_directions": "asymptotic momentum direction at escape",
         },
     )
 
@@ -248,6 +319,7 @@ def trace_crossings(
             "coordinates": "t,r,theta,phi; G=c=M=1; angles radians",
             "momentum_convention": "legacy past-oriented covector; E_obs=1",
             "slab_crossings": ncmax,
+            "sky_directions": "asymptotic momentum direction at escape",
         },
     )
     return rays, ncross, cross.transpose(2, 3, 1, 0).copy()
@@ -274,8 +346,7 @@ def _slab_transfer(spacetime, slab, rays, ncross, cross, observer_time):
         cos_eta = np.clip(np.abs(y[:, 5]) * g / np.sqrt(g_thth), 1e-6, 1.0)
         tau = slab.tau_perp(r, ph) / cos_eta
         t = observer_time - np.abs(y[:, 0])
-        source = np.broadcast_to(
-            np.asarray(slab.disk.intensity(r, ph, t), float), r.shape)
+        source = np.broadcast_to(slab.source_function(r, ph, t), r.shape)
         if np.any(~np.isfinite(source)) or np.any(source < 0):
             raise ValueError("emitted intensity must be finite and nonnegative")
         foreground = tau_total[mask]
@@ -365,11 +436,11 @@ def render_scene(
             raise ValueError("emitted intensity must be finite and nonnegative")
         gmap[mask] = g
         intensity[mask] = g ** (3 if legacy and code == 2 else 4) * emitted
+    directions = escape_directions(rays, spacetime)
     rgb = compose_rgb(
         intensity,
         rays.status,
-        rays.endpoint[..., 2],
-        rays.endpoint[..., 3],
+        *directions,
         sky,
         exposure=exposure,
         tone=tone,
@@ -390,7 +461,9 @@ def render_scene(
         if legacy
         else "bolometric g^4; no volume transfer",
     }
-    return SceneImage(rays, intensity, gmap, rgb, meta)
+    image = SceneImage(rays, intensity, gmap, rgb, meta)
+    image._dirs = directions
+    return image
 
 
 def _transfer(tone, decades):
@@ -415,11 +488,11 @@ def _render_slab(spacetime, camera, slab, surface, sky, exposure, observer_time,
     rays, ncross, cross = trace_crossings(spacetime, camera, slab, **trace_options)
     intensity, gmap, tau = _slab_transfer(spacetime, slab, rays, ncross, cross,
                                           observer_time)
+    directions = escape_directions(rays, spacetime)
     rgb = compose_rgb(
         intensity,
         rays.status,
-        rays.endpoint[..., 2],
-        rays.endpoint[..., 3],
+        *directions,
         sky,
         exposure=exposure,
         transmission=np.exp(-tau),
@@ -441,4 +514,6 @@ def _render_slab(spacetime, camera, slab, surface, sky, exposure, observer_time,
         "crossing_counts": np.bincount(ncross.ravel(),
                                        minlength=slab.max_crossings + 1).tolist(),
     }
-    return VolumeImage(rays, intensity, gmap, rgb, meta, tau)
+    image = VolumeImage(rays, intensity, gmap, rgb, meta, tau)
+    image._dirs = directions
+    return image

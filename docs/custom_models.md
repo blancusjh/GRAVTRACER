@@ -68,13 +68,21 @@ parameters and rejects reuse with a different spin.
 
 ### Translucent disks: `SlabDisk`
 
+> **Consistency:** Page–Thorne and other standard thin-disk models assume a
+> disk that is optically thick, with vertical optical depths of order 10³ or
+> more, so they are opaque. Pairing them with a small `tau_perp` is not
+> physically consistent. Use `SlabDisk` with a small optical depth only for
+> an emission model that is itself optically thin, and keep Page–Thorne disks
+> opaque (a plain `PageThorneDisk`). The example below shows the interface,
+> not a recommended disk.
+
 A real disk is not a knife-edged opaque sheet: its optical depth falls with
 radius. `SlabDisk` wraps any `EmittingDisk` as a geometrically thin, gray slab
 with vertical optical depth `tau_perp(r, phi)`:
 
 ```python
-disk = grayt.SlabDisk(grayt.PageThorneDisk(bh, r_out=60),
-                      lambda r, phi: 2.0 * (6.0 / r) ** 2)
+disk = grayt.SlabDisk(my_optically_thin_disk,      # an EmittingDisk
+                      lambda r, phi: 0.3 * (6.0 / r) ** 2)
 image = grayt.render_scene(bh, camera, disk, sky=sky, exposure=240, tone="log")
 ```
 
@@ -384,8 +392,8 @@ emission features, whereas background stars do move. Disk false colors and
 sky RGB have no common calibrated spectrum. For a gradual optical-depth
 transition, the Python renderer offers `SlabDisk` (above), which applies
 radiative transfer rather than blending background light through an
-opaque disk. `examples/kerr_movie.py` combines it with a moving camera and a
-disk pattern that turns with the flow.
+opaque disk. `examples/kerr_movie.py` renders an opaque Page–Thorne disk with a
+pattern that turns with the flow.
 
 For a slower Kerr movie with reduced spatial aliasing:
 

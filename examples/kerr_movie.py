@@ -1,14 +1,13 @@
 """Views from all around a Kerr black hole while its disk turns.
 
-Frame k is what a stationary (ZAMO) observer at r = 100 M sees at
+Frame k is what a stationary (ZAMO) observer at r = 400 M sees at
 coordinate time t_k = k dt, placed at successive azimuths and inclinations
 between 60 and 84 degrees, so the lensed Milky Way streams around the
 Einstein ring. It is a sequence of observers, not one moving camera: a
 single camera covering 360 degrees in this time would exceed light speed,
 and a physically moving camera would also see aberration.
-The disk is a translucent Page-Thorne slab (SlabDisk): opaque near the
-ISCO, optically thin further out, so starlight passes through it and every
-disk crossing of every ray is counted.
+The disk is an opaque Page-Thorne disk out to 60 M, as its optically
+thick assumption requires.
 
 To make the rotation visible, the disk carries hot spots whose brightness
 pattern is advected with the Keplerian angular velocity of the same
@@ -42,7 +41,8 @@ from grayt.animation import VideoWriter, display_frame
 
 SPIN = 0.9
 R_OUT = 60.0
-EXPOSURE = 240.0        # white at I = 1/240; log tone over 2.5 decades
+EXPOSURE = 240.0        # white at I = 1/240; log tone over DECADES
+DECADES = 3.5
 SKY_GAIN = 1.4
 # The Milky Way's core lies behind the hole for a camera at phi = 90 deg.
 # Start 120 deg earlier, over sparse sky, so the band sweeps in behind the
@@ -50,11 +50,6 @@ SKY_GAIN = 1.4
 PHI_START = -30.0
 PHI_SLOWEST = 90.0      # the orbit eases to its slowest speed here
 EASE = 0.65             # speed there is (1 - EASE) of the mean
-
-
-def vertical_optical_depth(r, phi):
-    """tau_perp = 2 (6 M / r)^2: opaque inside ~8 M, thin beyond ~20 M."""
-    return 2.0 * (6.0 / r) ** 2
 
 
 def hot_spot_disk(bh, n_spots=9, seed=3):
@@ -82,8 +77,8 @@ def hot_spot_disk(bh, n_spots=9, seed=3):
 
 
 def cameras(frames, resolution):
-    camera = grayt.Camera(r=100.0, theta=72.0, phi=90.0, x=(-40.0, 40.0),
-                          y=(-25.0, 25.0), resolution=resolution)
+    camera = grayt.Camera(r=400.0, theta=72.0, phi=90.0, x=(-160.0, 160.0),
+                          y=(-100.0, 100.0), resolution=resolution)
     u0 = (PHI_SLOWEST - PHI_START) / 360.0
     for k in range(frames):
         u = k / frames
@@ -103,8 +98,8 @@ def caption(frame, camera, t, font, small):
     draw.text((0.03 * w, 0.035 * h), "Kerr black hole, a = 0.9", fill=ink,
               font=font)
     draw.text((0.03 * w, 0.035 * h + 1.35 * font.size),
-              "translucent Page–Thorne slab with Keplerian hot spots; "
-              "stationary observers at r = 100 M",
+              "opaque Page–Thorne disk with Keplerian hot spots; "
+              "stationary observers at r = 400 M",
               fill=muted, font=small)
     draw.text((0.03 * w, 0.93 * h),
               f"i = {camera.theta:4.1f}°    φ = {camera.phi:5.1f}°    "
@@ -129,7 +124,7 @@ def main():
     args = ap.parse_args()
 
     bh = grayt.BlackHole(SPIN)
-    slab = grayt.SlabDisk(hot_spot_disk(bh), vertical_optical_depth)
+    disk = hot_spot_disk(bh)
     sky = grayt.CelestialSky.nasa_starmap(gain=SKY_GAIN)
     from matplotlib import font_manager
     face = font_manager.findfont(font_manager.FontProperties(family=style.SERIF))
@@ -142,10 +137,10 @@ def main():
             traced = replace(camera, resolution=tuple(n * args.ss
                                                       for n in args.res))
             t = k * args.dt
-            image = grayt.render_scene(bh, traced, slab, sky=sky,
-                                       exposure=EXPOSURE, tone="log",
+            image = grayt.render_scene(bh, traced, disk, sky=sky,
+                                       exposure=EXPOSURE, tone="log", decades=DECADES,
                                        observer_time=t,
-                                       escape_radius=200.0)
+                                       escape_radius=800.0)
             frame = caption(display_frame(image.rgb, args.ss), camera, t,
                             font, small)
             writer.write(frame)

@@ -29,10 +29,11 @@ style.use()
 def disk_figure():
     spacetime = grayt.BlackHole(a=0.95)
     camera = grayt.Camera(
-        r=100, theta=76, phi=90, x=(-40, 40), y=(-25, 25), resolution=(2240, 1400)
+        r=400, theta=76, phi=90, x=(-160, 160), y=(-100, 100),
+        resolution=(2240, 1400)
     )
-    disk = grayt.SlabDisk(grayt.PageThorneDisk(spacetime, r_out=60),
-                          lambda r, phi: 2.0 * (6.0 / r) ** 2)
+    # Page-Thorne assumes an optically thick disk, so it is opaque.
+    disk = grayt.PageThorneDisk(spacetime, r_out=60)
     image = grayt.render_scene(
         spacetime,
         camera,
@@ -40,7 +41,8 @@ def disk_figure():
         sky=grayt.CelestialSky.nasa_starmap(gain=1.4),
         exposure=240,
         tone="log",
-        escape_radius=200,
+        decades=3.5,
+        escape_radius=800,
         rtol=2e-9,
         atol=2e-11,
     )
@@ -51,11 +53,11 @@ def disk_figure():
     style.frame(ax)
     fig.text(0.07, 0.945, "Kerr black hole, $a = 0.95$", color=INK,
              fontsize=21, va="top")
-    fig.text(0.07, 0.895, "Translucent Page–Thorne disk at 76° inclination, "
-             "with the Milky Way lensed into an Einstein ring behind it",
+    fig.text(0.07, 0.895, "Opaque Page–Thorne disk at 76° inclination, "
+             "with the Milky Way lensed into an Einstein ring around it",
              color=MUTED, fontsize=12.5, style="italic", va="top")
-    fig.text(0.07, 0.03, "Flux-conserving gray thin slab, $\\tau_\\perp = 2\\,(6M/r)^2$, "
-             "transfer at every disk crossing. Log display over 2.5 decades; "
+    fig.text(0.07, 0.03, "Optically thick disk to $r = 60$ M; its outer parts fall below the "
+             "display range. Observer at $r = 400$ M. Log display over 3.5 decades; "
              "colors are a display mapping, not spectra. "
              "Sky: NASA SVS Deep Star Maps 2020.", color=MUTED, fontsize=9.5)
     fig.savefig(IMAGES / "kerr_disk.png", dpi=185)

@@ -61,8 +61,8 @@ gravtracer render configs/celestial_kerr.yml -o celestial.png --npz
 
 - Kerr and Zipoy–Voorhees geometries, plus stationary axisymmetric metric
   tables and spherical stellar or charged exteriors.
-- Thin disks, Page–Thorne disks, translucent gray slab disks (transfer at
-  every crossing), prescribed surfaces, gray volume radiation, and celestial
+- Thin disks, Page–Thorne disks, gray slab disks of finite optical depth
+  for optically thin emitters (transfer at every crossing), prescribed surfaces, gray volume radiation, and celestial
   image maps. The legacy thin-disk model reproduces the
   [OSIRIS paper](https://arxiv.org/abs/2202.00086).
 - Double-precision CPU rendering; optional OpenCL rendering and a live

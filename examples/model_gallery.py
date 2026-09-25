@@ -154,18 +154,9 @@ The volume example imports prescribed gray radiation coefficients, not a GRMHD s
 
 
 INCLINATIONS = (20, 60, 84)
-EXPOSURE = 240.0   # white at I = 1/240, log tone over 2.5 decades
+EXPOSURE = 240.0   # white at I = 1/240, log tone over DECADES
+DECADES = 3.5      # wide enough that the dim outer disk is not shown black
 DISK_R_OUT = 60.0
-
-
-def vertical_optical_depth(r, phi):
-    """tau_perp = 2 (6 M / r)^2: opaque inside ~8 M, thin beyond ~20 M."""
-    return 2.0 * (6.0 / r) ** 2
-
-
-def slab(disk):
-    """See-through gray slab with the disk's source function and motion."""
-    return grayt.SlabDisk(disk, vertical_optical_depth)
 
 
 def models():
@@ -173,7 +164,8 @@ def models():
     for spin in (0.0, 0.5, 0.95):
         angles = INCLINATIONS
         st = grayt.BlackHole(spin)
-        disk = slab(grayt.PageThorneDisk(st, r_out=DISK_R_OUT))
+        # Page-Thorne assumes an optically thick disk: it is opaque.
+        disk = grayt.PageThorneDisk(st, r_out=DISK_R_OUT)
         for angle in angles:
             cases.append(
                 (
@@ -183,7 +175,7 @@ def models():
                     disk,
                     None,
                     angle,
-                    "Kerr / Page-Thorne source in a gray slab, tau_perp=2(6/r)^2 / Keplerian / bolometric",
+                    "Kerr / opaque Page-Thorne disk to 60 M / Keplerian / bolometric g^4",
                 )
             )
     star = grayt.SphericalStar(radius=5.0)
@@ -222,13 +214,13 @@ def models():
     )
     for charge in (0.5, 0.8):
         st = grayt.ReissnerNordstrom(charge)
-        disk = slab(grayt.EmittingDisk(
+        disk = grayt.EmittingDisk(
             6.0,
             DISK_R_OUT,
             lambda r, ph, t: 2e-4 * (6 / r) ** 3 * (1 - np.sqrt(6 / r)),
             name="illustrative power-law emission",
             provenance={"warning": "not a self-consistent charged accretion solution"},
-        ))
+        )
         cases.append(
             (
                 f"charged_q{charge:g}",
@@ -321,10 +313,10 @@ def plate(thumbnails, path):
     fig.text(left, 0.925, "Stationary spacetimes and the light they bend",
              color=style.INK, fontsize=26)
     fig.text(left, 0.03,
-             "Disks: flux-conserving gray thin slabs, $\\tau_\\perp = 2\\,(6M/r)^2$, every crossing "
-             "counted; Kerr source function Page–Thorne. Stars and charged holes: "
+             "Disks: opaque and geometrically thin, to $r = 60$ M; Kerr disks "
+             "Page–Thorne. Stars and charged holes: "
              "prescribed emission. Sky: NASA SVS Deep Star Maps 2020, lensed. "
-             "Fixed log display, 2.5 decades.",
+             "Observers at $r = 400$ M. Fixed log display, 3.5 decades.",
              color=style.MUTED, fontsize=10.5)
     fig.savefig(path, dpi=130)
     plt.close(fig)
@@ -449,12 +441,14 @@ def main():
     plt.imsave(args.output / "celestial_map.png", sky.image)
     # phi=90 deg puts the Milky Way's core behind the hole, so the lensed
     # star field shows the curvature; the frame contains the Einstein ring.
+    # The observer sits at 400 M, well outside the opaque 60 M disk, so the
+    # disk does not fill the view; extents are direction cosines x r.
     camera = grayt.Camera(
-        r=100,
+        r=400,
         theta=70,
         phi=90,
-        x=(-40, 40),
-        y=(-25, 25),
+        x=(-160, 160),
+        y=(-100, 100),
         # 2x the displayed tile resolution: the plate's resampling averages
         # four rays per displayed pixel (anti-aliasing near the photon ring).
         resolution=(192, 120) if args.quick else (1280, 800),
@@ -471,9 +465,10 @@ def main():
             sky=sky,
             exposure=EXPOSURE,
             tone="log",
+            decades=DECADES,
             rtol=2e-9,
             atol=2e-11,
-            escape_radius=200,
+            escape_radius=800,
         )
         image.save(args.output / f"{slug}.npz")
         save_panel(image, args.output / f"{slug}.png", title, note)
@@ -499,7 +494,7 @@ def main():
             (
                 "kerr_camera_orbit",
                 grayt.BlackHole(0.8),
-                slab(grayt.PageThorneDisk(grayt.BlackHole(0.8), r_out=DISK_R_OUT)),
+                grayt.PageThorneDisk(grayt.BlackHole(0.8), r_out=DISK_R_OUT),
                 None,
             ),
             ("stellar_camera_orbit", grayt.SphericalStar(5), None, next(m[4] for m in models() if m[0] == "star_spots")),
@@ -515,11 +510,13 @@ def main():
                 sky=sky,
                 exposure=EXPOSURE,
                 tone="log",
+                decades=DECADES,
+            decades=DECADES,
                 archive_every=max(1, frames // 4),
                 coordinate_time_step=1 / 24,
                 rtol=1e-8,
                 atol=1e-10,
-                escape_radius=200,
+                escape_radius=800,
                 progress=lambda i, n: (
                     print(f"  {i}/{n}", flush=True) if i % 12 == 0 else None
                 ),

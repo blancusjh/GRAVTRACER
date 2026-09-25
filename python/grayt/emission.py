@@ -343,3 +343,53 @@ class SlabDisk:
             "radiation": "gray slab: g^4 S (1 - exp(-tau_perp / cos eta)), "
                          "all crossings, attenuated background",
         }
+
+
+def spreading_disk(spacetime, r_c=8.0, tau_c=1e4, r_out=None, base=None):
+    """Page-Thorne disk with the outer edge of a viscously spreading disk.
+
+    A steady thin disk has no natural outer edge; a real one ends where it
+    has spread to. The Lynden-Bell & Pringle (1974) similarity solution
+    with viscosity nu ~ r (gamma = 1) has nu Sigma ~ exp(-r / r_c) and
+    Sigma ~ exp(-r / r_c) / r. So the dissipated flux is the Page-Thorne
+    flux times exp(-r / r_c) (exact as r_c -> infinity), and the vertical
+    optical depth is tau_perp = tau_c (r_c / r) exp(1 - r / r_c), with
+    tau_c = tau_perp(r_c) (electron scattering gives 10^2-10^5 for
+    luminous thin disks).
+
+    Each element emits S (1 - exp(-tau)) with S the blackbody intensity of
+    its effective temperature (``conserve_flux=False``): exact where the
+    disk is optically thick, and the gas simply fades where it becomes thin.
+    The energy that tail would radiate is ~1e-5 of the disk luminosity for
+    the defaults; forcing it out of near-transparent gas (flux
+    conservation) would require a hot optically thin phase this gray model
+    does not describe. The visible disk then ends where T_eff falls below
+    ~1000 K (the Wien tail collapses); with these defaults the gas turns
+    transparent while still glowing, so starlight shows through the fading
+    rim. ``r_out`` (default 15 r_c) only bounds the computation and lies
+    beyond the visible disk.
+
+    ``base`` replaces the Page-Thorne emission with another EmittingDisk
+    (any metric); its intensity and four-velocity are tapered the same way.
+    """
+    r_out = 15.0 * r_c if r_out is None else float(r_out)
+    if base is None:
+        base = PageThorneDisk(spacetime, r_out=r_out)
+    elif base.r_out < r_out:
+        raise ValueError("base disk must extend to r_out")
+    if not (r_c > base.r_in and tau_c > 0):
+        raise ValueError("require r_c > the disk's inner edge and tau_c > 0")
+    disk = EmittingDisk(
+        base.r_in, r_out,
+        lambda r, phi, t: base.intensity(r, phi, t) * np.exp(-r / r_c),
+        base.four_velocity,
+        name=f"{base.name} x exp(-r/{r_c:g}) (spreading disk)",
+        provenance={"model": "Lynden-Bell & Pringle 1974, gamma=1",
+                    "r_c": r_c, "tau_c": tau_c, "base": base.metadata()})
+
+    def tau_perp(r, phi):
+        """tau_c (r_c / r) exp(1 - r / r_c)"""
+        return tau_c * (r_c / r) * np.exp(1.0 - r / r_c)
+
+    return SlabDisk(disk, tau_perp, conserve_flux=False,
+                    name="viscously spreading thin disk")

@@ -325,8 +325,13 @@ def trace_crossings(
     return rays, ncross, cross.transpose(2, 3, 1, 0).copy()
 
 
-def _slab_transfer(spacetime, slab, rays, ncross, cross, observer_time):
-    """Observed intensity, first-crossing g, and optical depth per pixel."""
+def _slab_transfer(spacetime, slab, rays, ncross, cross, observer_time,
+                   layers=None):
+    """Observed intensity, first-crossing g, and optical depth per pixel.
+
+    If ``layers`` is a list, (mask, g, S, weight) is appended per crossing,
+    where weight = exp(-tau in front) (1 - exp(-tau)); photometry uses it.
+    """
     shape = rays.status.shape
     intensity = np.zeros(shape)
     tau_total = np.zeros(shape)
@@ -350,7 +355,10 @@ def _slab_transfer(spacetime, slab, rays, ncross, cross, observer_time):
         if np.any(~np.isfinite(source)) or np.any(source < 0):
             raise ValueError("emitted intensity must be finite and nonnegative")
         foreground = tau_total[mask]
-        intensity[mask] += np.exp(-foreground) * g**4 * source * -np.expm1(-tau)
+        weight = np.exp(-foreground) * -np.expm1(-tau)
+        intensity[mask] += weight * g**4 * source
+        if layers is not None:
+            layers.append((mask, g, np.array(source), weight))
         tau_total[mask] = foreground + tau
         if k == 0:
             gmap[mask] = g
@@ -369,6 +377,8 @@ def render_scene(
     observer_time=0.0,
     tone="exp",
     decades=2.5,
+    photometry=None,
+    levels=None,
     **trace_options,
 ):
     """Vacuum propagation + bolometric surfaces + celestial RGB map.
@@ -376,14 +386,20 @@ def render_scene(
     Opaque disks stop rays; a ``SlabDisk`` is see-through with gray
     transfer at every crossing. ``tone``/``decades`` choose the display
     curve (see ``compose_rgb``); raw intensities are unaffected.
+
+    With ``photometry`` (a ``grayt.photometry.Photometry``) the RGB is a
+    calibrated rendering instead: blackbody emission at g T in physical
+    units plus the calibrated sky, one global tone curve (``levels``, see
+    ``photometric_render``; the levels used are stored in ``meta``).
     Background RGB is an uncalibrated map on a finite coordinate sphere,
     not an infinite-distance direction map or a redshifted stellar spectrum.
     """
     from .matter import ThinDisk
 
     if isinstance(disk, SlabDisk):
-        return _render_slab(spacetime, camera, disk, surface, sky, exposure,
-                            observer_time, tone, decades, trace_options)
+        image = _render_slab(spacetime, camera, disk, surface, sky, exposure,
+                             observer_time, tone, decades, trace_options)
+        return _photometric(image, photometry, sky, levels)
     legacy = isinstance(disk, ThinDisk)
     source_metadata = metadata(disk) if disk else None
     if legacy:
@@ -419,6 +435,7 @@ def render_scene(
     rays = trace_bundle(spacetime, camera, disk, **trace_options)
     intensity = np.zeros(camera.resolution)
     gmap = np.zeros(camera.resolution)
+    layers = []
     for source, code in ((disk, 2), (surface, 1)):
         mask = rays.status == code
         if source is None or not mask.any():
@@ -436,6 +453,8 @@ def render_scene(
             raise ValueError("emitted intensity must be finite and nonnegative")
         gmap[mask] = g
         intensity[mask] = g ** (3 if legacy and code == 2 else 4) * emitted
+        if not (legacy and code == 2):
+            layers.append((mask, g, np.array(emitted), np.ones_like(g)))
     directions = escape_directions(rays, spacetime)
     rgb = compose_rgb(
         intensity,
@@ -463,6 +482,20 @@ def render_scene(
     }
     image = SceneImage(rays, intensity, gmap, rgb, meta)
     image._dirs = directions
+    image.layers = layers
+    return _photometric(image, photometry, sky, levels)
+
+
+def _photometric(image, photometry, sky, levels):
+    if photometry is None:
+        return image
+    from .photometry import photometric_render
+
+    keys = ("floor", "knee", "white", "disk_decades")
+    fixed = {k: v for k, v in (levels or {}).items() if k in keys}
+    _, image.rgb, used = photometric_render(image, photometry, sky, **fixed)
+    image.meta["display"] = {"photometry": photometry.metadata(),
+                             "tone": "log10(Y) piecewise linear", **used}
     return image
 
 
@@ -486,8 +519,9 @@ def _render_slab(spacetime, camera, slab, surface, sky, exposure, observer_time,
     trace_options = {k: v for k, v in trace_options.items()
                      if k != "constraint_monitor"}
     rays, ncross, cross = trace_crossings(spacetime, camera, slab, **trace_options)
+    layers = []
     intensity, gmap, tau = _slab_transfer(spacetime, slab, rays, ncross, cross,
-                                          observer_time)
+                                          observer_time, layers)
     directions = escape_directions(rays, spacetime)
     rgb = compose_rgb(
         intensity,
@@ -516,4 +550,6 @@ def _render_slab(spacetime, camera, slab, surface, sky, exposure, observer_time,
     }
     image = VolumeImage(rays, intensity, gmap, rgb, meta, tau)
     image._dirs = directions
+    image.layers = layers
+    image.transmission = np.exp(-tau)
     return image

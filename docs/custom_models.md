@@ -114,6 +114,43 @@ a disk stay readable together. The raw `intensity` map is unchanged.
 `CelestialSky.nasa_starmap(gain=...)` brightens the display sky in the same
 display-only sense.
 
+### Physical photometry and disk edges
+
+`render_scene(..., photometry=grayt.photometry.Photometry(mass_msun,
+eddington_ratio, spin=...))` renders the scene on an absolute scale instead
+of a false-color map:
+
+- **Flux scale:** traced bolometric emission in code units (Page–Thorne
+  normalization `Mdot/(4 pi) = 1`) is converted with
+  `F = F_code Mdot c^2 / (4 pi r_g^2)`, where `Mdot = L / (eta c^2)` and eta is
+  the thin-disk efficiency. Far out this reproduces
+  `sigma T^4 = 3 G M Mdot / (8 pi R^3)` (`tests/test_photometry.py`).
+- **Colors:** every emitter radiates a blackbody at its effective
+  temperature, optionally color-corrected by `f_col`. Because `I_nu / nu^3` is
+  invariant, the observer receives `B_nu(g T)`. Colors come from the CIE 1931
+  color-matching functions (analytic fit, good to about 0.003 in chromaticity
+  above 2000 K).
+- **Sky:** the star map is linearized and scaled so its all-sky mean is
+  `sky_mu_v` (default V = 23 mag/arcsec², roughly the integrated starlight). The
+  absolute calibration is good to about a factor of a few, because the source
+  map was tone-compressed.
+- **Display:** one global, monotonic curve, piecewise linear in `log10 Y`,
+  splits the lightness range between the starlight, the gap up to the
+  dimmest disk light, and the disk's top four decades. Pass the returned
+  `meta["display"]` as `levels` to keep a movie's exposure fixed.
+
+A steady thin disk has no outer edge, and truncating it at some `r_out`
+draws one. `grayt.spreading_disk(spacetime, r_c, tau_c)` uses the outer
+edge of a viscously spreading disk instead (Lynden-Bell & Pringle 1974,
+viscosity `nu ~ r`): the dissipated flux is Page–Thorne times `exp(-r/r_c)`,
+and the vertical optical depth is `tau_c (r_c/r) exp(1 - r/r_c)`. The disk is
+opaque where it is bright. Its visible light ends where the gas cools below
+about 1000 K, and it turns transparent as it thins, so it fades into the
+background with no edge. The energy the thin tail does not radiate is below
+`1e-4` of the disk luminosity. In the optical, a disk hotter than about
+`3e4 K` is blue-white and its Doppler asymmetry is weak, because the band sits
+on the Rayleigh–Jeans tail where the received intensity scales as `g`, not `g^4`.
+
 ### Sky directions
 
 Rays stop on a finite escape sphere. Scene renderers sample the sky along each

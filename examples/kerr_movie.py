@@ -6,8 +6,12 @@ between 60 and 84 degrees, so the lensed Milky Way streams around the
 Einstein ring. It is a sequence of observers, not one moving camera: a
 single camera covering 360 degrees in this time would exceed light speed,
 and a physically moving camera would also see aberration.
-The disk is an opaque Page-Thorne disk out to 60 M, as its optically
-thick assumption requires.
+The disk is a viscously spreading thin disk (grayt.spreading_disk):
+Page-Thorne inside, with the Lynden-Bell & Pringle outer taper, opaque
+where optically thick and fading into transparency as it cools. Colors and
+brightness are physical (grayt.photometry): a 1e8 solar-mass hole at 10%
+of Eddington, blackbody emission seen at g T, and a calibrated sky, with
+one fixed global tone curve for every frame.
 
 To make the rotation visible, the disk carries hot spots whose brightness
 pattern is advected with the Keplerian angular velocity of the same
@@ -40,10 +44,8 @@ from grayt import style
 from grayt.animation import VideoWriter, display_frame
 
 SPIN = 0.9
-R_OUT = 60.0
-EXPOSURE = 240.0        # white at I = 1/240; log tone over DECADES
-DECADES = 3.5
-SKY_GAIN = 1.4
+R_C = 8.0               # spreading-disk scale radius [M]
+PHOTOMETRY = dict(mass_msun=1e8, eddington_ratio=0.1)
 # The Milky Way's core lies behind the hole for a camera at phi = 90 deg.
 # Start 120 deg earlier, over sparse sky, so the band sweeps in behind the
 # hole about a third of the way through and is seen deforming as it enters.
@@ -53,8 +55,8 @@ EASE = 0.65             # speed there is (1 - EASE) of the mean
 
 
 def hot_spot_disk(bh, n_spots=9, seed=3):
-    """Page-Thorne source function times an advected hot-spot pattern."""
-    base = grayt.PageThorneDisk(bh, r_out=R_OUT)
+    """Spreading disk whose flux carries an advected hot-spot pattern."""
+    base = grayt.PageThorneDisk(bh, r_out=15 * R_C)
     rng = np.random.default_rng(seed)
     radii = rng.uniform(bh.isco + 1.0, 16.0, n_spots)
     phases = rng.uniform(0, 2 * np.pi, n_spots)
@@ -69,11 +71,12 @@ def hot_spot_disk(bh, n_spots=9, seed=3):
             pattern += ak * radial * angular
         return base.intensity(r, phi, t) * (1.0 + pattern)
 
-    return grayt.EmittingDisk(
+    spots = grayt.EmittingDisk(
         base.r_in, base.r_out, intensity,
         name="Page-Thorne x hot spots advected with Keplerian Omega(r)",
         provenance={"spots": n_spots, "seed": seed,
                     "note": "prescribed brightness pattern; not MHD"})
+    return grayt.spreading_disk(bh, r_c=R_C, base=spots)
 
 
 def cameras(frames, resolution):
@@ -97,10 +100,11 @@ def caption(frame, camera, t, font, small):
     ink, muted = (236, 230, 218), (154, 149, 140)
     draw.text((0.03 * w, 0.035 * h), "Kerr black hole, a = 0.9", fill=ink,
               font=font)
-    draw.text((0.03 * w, 0.035 * h + 1.35 * font.size),
-              "opaque Page–Thorne disk with Keplerian hot spots; "
-              "stationary observers at r = 400 M",
-              fill=muted, font=small)
+    lines = ("thin disk in blackbody colours, M = 1e8 solar masses, 0.1 L_Edd",
+             "stationary observers at r = 400 M, one per frame")
+    for n, line in enumerate(lines):
+        draw.text((0.03 * w, 0.035 * h + 1.35 * font.size
+                   + n * 1.3 * small.size), line, fill=muted, font=small)
     draw.text((0.03 * w, 0.93 * h),
               f"i = {camera.theta:4.1f}°    φ = {camera.phi:5.1f}°    "
               f"t = {t:5.0f} M", fill=muted, font=small)
@@ -125,7 +129,9 @@ def main():
 
     bh = grayt.BlackHole(SPIN)
     disk = hot_spot_disk(bh)
-    sky = grayt.CelestialSky.nasa_starmap(gain=SKY_GAIN)
+    sky = grayt.CelestialSky.nasa_starmap()
+    photometry = grayt.photometry.Photometry(spin=SPIN, **PHOTOMETRY)
+    levels = None           # fixed from the first frame: no exposure flicker
     from matplotlib import font_manager
     face = font_manager.findfont(font_manager.FontProperties(family=style.SERIF))
     font = ImageFont.truetype(face, max(12, args.res[1] // 18))
@@ -138,9 +144,10 @@ def main():
                                                       for n in args.res))
             t = k * args.dt
             image = grayt.render_scene(bh, traced, disk, sky=sky,
-                                       exposure=EXPOSURE, tone="log", decades=DECADES,
+                                       photometry=photometry, levels=levels,
                                        observer_time=t,
                                        escape_radius=800.0)
+            levels = levels or image.meta["display"]
             frame = caption(display_frame(image.rgb, args.ss), camera, t,
                             font, small)
             writer.write(frame)

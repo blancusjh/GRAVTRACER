@@ -32,16 +32,15 @@ def disk_figure():
         r=400, theta=76, phi=90, x=(-160, 160), y=(-100, 100),
         resolution=(2240, 1400)
     )
-    # Page-Thorne assumes an optically thick disk, so it is opaque.
-    disk = grayt.PageThorneDisk(spacetime, r_out=60)
+    # Page-Thorne inside, Lynden-Bell & Pringle taper outside; physical
+    # photometry: blackbody emission at g T for 1e8 Msun at 0.1 L_Edd.
+    disk = grayt.spreading_disk(spacetime, r_c=8.0)
     image = grayt.render_scene(
         spacetime,
         camera,
         disk,
-        sky=grayt.CelestialSky.nasa_starmap(gain=1.4),
-        exposure=240,
-        tone="log",
-        decades=3.5,
+        sky=grayt.CelestialSky.nasa_starmap(),
+        photometry=grayt.photometry.Photometry(1e8, 0.1, spin=0.95),
         escape_radius=800,
         rtol=2e-9,
         atol=2e-11,
@@ -53,13 +52,13 @@ def disk_figure():
     style.frame(ax)
     fig.text(0.07, 0.945, "Kerr black hole, $a = 0.95$", color=INK,
              fontsize=21, va="top")
-    fig.text(0.07, 0.895, "Opaque Page–Thorne disk at 76° inclination, "
-             "with the Milky Way lensed into an Einstein ring around it",
+    fig.text(0.07, 0.895, "Thin accretion disk at 76° inclination in true "
+             "blackbody colors, with the Milky Way lensed around the hole",
              color=MUTED, fontsize=12.5, style="italic", va="top")
-    fig.text(0.07, 0.03, "Optically thick disk to $r = 60$ M; its outer parts fall below the "
-             "display range. Observer at $r = 400$ M. Log display over 3.5 decades; "
-             "colors are a display mapping, not spectra. "
-             "Sky: NASA SVS Deep Star Maps 2020.", color=MUTED, fontsize=9.5)
+    fig.text(0.07, 0.03, "$10^8\\,M_\\odot$ at 0.1 $L_{\\rm Edd}$; spreading thin disk "
+             "(Page–Thorne inside, $r_c = 8$ M), blackbody at $gT$; calibrated sky "
+             "(NASA SVS Deep Star Maps 2020). Observer at $r = 400$ M; one global "
+             "monotonic tone curve.", color=MUTED, fontsize=9.5)
     fig.savefig(IMAGES / "kerr_disk.png", dpi=185)
     plt.close(fig)
 

@@ -8,12 +8,14 @@ geodesic core powers the Python package `grayt` and the `gravtracer` CLI.
 
 ![A lensed Page–Thorne disk around a spinning Kerr black hole](docs/images/kerr_disk.png)
 
-*Kerr black hole, spin 0.95, viewed at 76°. The disk is a translucent,
-flux-conserving Page–Thorne slab: opaque near the hole and optically thin
-further out, so the lensed Milky Way behind it shows through. The sky is
-sampled along each ray's direction at infinity. The background uses
-[NASA SVS Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/); disk colors are a
-display mapping, not measured spectra.*
+*Kerr black hole, spin 0.95, viewed at 76° from 400 M, in physical units: a
+10⁸ M☉ hole accreting at 10% of the Eddington rate. The disk is a
+viscously spreading thin disk (Page–Thorne inside, Lynden-Bell–Pringle edge):
+each part glows as a blackbody at its temperature, seen at the redshifted
+temperature g T, and the gas turns transparent as it cools, so it fades into
+the lensed Milky Way. The sky ([NASA SVS Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/))
+is calibrated to real surface brightness and sampled along each ray's
+direction at infinity. One global, monotonic tone curve maps it all.*
 
 ## Install
 
@@ -74,18 +76,20 @@ gravtracer render configs/celestial_kerr.yml -o celestial.png --npz
 ![Gallery of GRAVTRACER black holes, stars, and other stationary models](docs/images/model_gallery.png)
 
 *Kerr holes arranged by spin and inclination, beside stellar, charged, and
-Zipoy–Voorhees exteriors. Every camera looks toward the Milky Way's core, so
-the bending of light shows in the distorted star field and its Einstein ring.
-Disk and surface colors are display mappings.*
+Zipoy–Voorhees exteriors, all rendered with the same physical photometry and
+one fixed tone curve, so brightness compares across panels. Every observer
+looks toward the Milky Way's core, so the bending of light shows in the
+distorted star field and its Einstein ring.*
 
 ![Views from all around a Kerr black hole while hot spots in its disk wind into spirals](docs/animations/kerr_orbit.gif)
 
-*Kerr black hole, spin 0.9, seen by stationary observers at r = 100 M placed
-all around it ([MP4](docs/animations/kerr_orbit.mp4)). Each frame is one
-observer at a later coordinate time, not a single moving camera. Hot spots in
-the disk are advected with the Keplerian flow and shear into spiral arcs, and
-light-travel delays to every disk element are included. The pattern is
-prescribed, not MHD. Made with `python examples/kerr_movie.py`.*
+*Kerr black hole, spin 0.9, seen by stationary observers at r = 400 M placed
+all around it ([MP4](docs/animations/kerr_orbit.mp4)); each frame is one
+observer at a later coordinate time, not a single moving camera. The view
+starts over sparse sky, then the Milky Way sweeps in behind the hole and is
+lensed around it. Photometry as above; the disk carries a weak, prescribed
+hot-spot pattern advected with the Keplerian flow, with light-travel delays.
+Made with `python examples/kerr_movie.py`.*
 
 ![A camera photographs an engraving behind a Kerr black hole through traced null geodesics](docs/images/image_formation_scene.png)
 
@@ -106,6 +110,10 @@ Generate the gallery yourself with:
 ```sh
 python examples/model_gallery.py --output output/stationary_models --skip-videos
 ```
+
+`grayt.photometry` renders scenes on an absolute scale: blackbody emission
+at the redshifted temperature, a calibrated sky, CIE colors, and one global
+tone curve (`render_scene(..., photometry=grayt.photometry.Photometry(...))`).
 
 Every figure uses one house style: a black field and STIX serif type. Library
 plots apply it automatically; call `grayt.style.use()` to style your own

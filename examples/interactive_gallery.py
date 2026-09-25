@@ -16,7 +16,7 @@ import plotly.io as pio
 import grayt
 from grayt.geometry import bl_to_cart
 
-BACKGROUND = "#0d1420"
+BACKGROUND = "#000000"
 CONFIG = {
     "responsive": True,
     "displaylogo": False,
@@ -70,7 +70,7 @@ def sphere(radius, *, star=False):
         scale = [[0, "#8b351c"], [0.4, "#ed8625"], [1, "#fff1a1"]]
     else:
         color = np.zeros_like(theta)
-        scale = [[0, "#202a3a"], [1, "#202a3a"]]
+        scale = [[0, "#111111"], [1, "#111111"]]
     return go.Surface(
         x=xyz[..., 0],
         y=xyz[..., 1],

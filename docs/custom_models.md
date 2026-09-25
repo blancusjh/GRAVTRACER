@@ -67,7 +67,7 @@ silently redefined. Both models are Kerr-only. A PageThorneDisk stores its Kerr
 parameters and rejects reuse with a different spin.
 
 `CelestialSky.nasa_starmap()` loads the bundled NASA Scientific Visualization
-Studio [Deep Star Maps](https://svs.gsfc.nasa.gov/3895/) image, based on star
+Studio [Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/) image, based on star
 catalogs. `CelestialSky("map.png")` accepts a user-provided equirectangular RGB map.
 The bundled loader reverses NASA's leftward right-ascension axis and centers
 RA=0 at `phi=0` for display. This is a coordinate convention, not an

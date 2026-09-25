@@ -96,7 +96,7 @@ py.install_sources(
 )
 
 py.install_sources(
-  ['python/grayt/assets/nasa_starmap_4k.jpg'],
+  ['python/grayt/assets/nasa_starmap_2020_4k.jpg'],
   subdir: 'grayt/assets',
 )
 

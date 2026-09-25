@@ -51,7 +51,7 @@ if(this.open&&!this.dataset.loaded){this.dataset.loaded='true';this.querySelecto
         coordinates = (
             '<!doctype html><html lang="en"><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            "<style>body{margin:0;background:#090d16;color:#dce4ef;font:16px/1.6 system-ui}"
+            "<style>body{margin:0;background:#000;color:#dce4ef;font:16px/1.6 system-ui}"
             ".interactive-plot{margin:18px 0;border-radius:12px;overflow:hidden}</style>"
             + interactive
             + "</html>"
@@ -123,14 +123,14 @@ if(this.open&&!this.dataset.loaded){this.dataset.loaded='true';this.querySelecto
         """<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GRAVTRACER — stationary models</title>
-<style>body{background:#090d16;color:#dce4ef;font:16px/1.6 system-ui;margin:32px auto;max-width:1400px;padding:0 24px}
+<style>body{background:#000;color:#dce4ef;font:16px/1.6 system-ui;margin:32px auto;max-width:1400px;padding:0 24px}
 h1{font-size:36px}h2{font-size:19px}a{color:#8fcaff}img,video{width:100%;height:auto;border-radius:8px}
-main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:24px}article{background:#131b28;padding:20px;border-radius:12px}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:24px}article{background:#111;padding:20px;border-radius:12px}
 p{color:#b9c5d6}.intro{max-width:960px;margin-bottom:32px}
 .interactive-section{margin:32px 0 48px}.interactive-section>h2{font-size:28px}
-.interactive-plot{background:#0d1420;border:1px solid #29384c;border-radius:12px;overflow:hidden;margin:18px 0}
+.interactive-plot{background:#000;border:1px solid #333;border-radius:12px;overflow:hidden;margin:18px 0}
 #coordinate-diagrams{margin:24px 0 40px}#coordinate-diagrams>summary{cursor:pointer;font-size:20px}
-.desktop-launch{display:inline-block;padding:8px 14px;background:#243b53;border:1px solid #557b9c;border-radius:7px;text-decoration:none}
+.desktop-launch{display:inline-block;padding:8px 14px;background:#222;border:1px solid #555;border-radius:7px;text-decoration:none}
 #browser-preview{margin:24px 0}summary{cursor:pointer}
 </style>
 <h1>Stationary spacetimes and light</h1><div class="intro">
@@ -237,7 +237,7 @@ def models():
 
 
 def save_panel(image, path, title, note):
-    fig, ax = plt.subplots(figsize=(10, 6), facecolor="#090d16")
+    fig, ax = plt.subplots(figsize=(10, 6), facecolor="black")
     image.plot(ax)
     ax.set_title(title, color="white", loc="left", pad=14)
     ax.set_facecolor("black")
@@ -282,8 +282,8 @@ def ray_movie(path, frames=96):
     np.savez_compressed(
         path.with_suffix(".npz"), **{f"ray_{i}": v for i, v in enumerate(traces)}
     )
-    fig = plt.figure(figsize=(9.6, 7.2), dpi=100, facecolor="#090d16")
-    ax = fig.add_subplot(111, projection="3d", facecolor="#090d16")
+    fig = plt.figure(figsize=(9.6, 7.2), dpi=100, facecolor="black")
+    ax = fig.add_subplot(111, projection="3d", facecolor="black")
     angle = np.linspace(0, 2 * np.pi, 100)
     radius = np.linspace(st.isco, 20, 14)
     aa, rr = np.meshgrid(angle, radius)
@@ -301,7 +301,7 @@ def ray_movie(path, frames=96):
         rh * np.cos(u) * np.sin(v),
         rh * np.sin(u) * np.sin(v),
         rh * np.cos(v),
-        color="#10141e",
+        color="#050505",
     )
     for i, pts in enumerate(traces):
         ax.plot(
@@ -321,7 +321,7 @@ def ray_movie(path, frames=96):
     ax.set_box_aspect((1, 1, 1))
     for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
         axis.label.set_color("#c0cadd")
-        axis.set_pane_color((0.06, 0.08, 0.12, 1))
+        axis.set_pane_color((0, 0, 0, 1))
     ax.tick_params(colors="#c0cadd")
     ax.set_title(
         "Kerr a=0.8 | null geodesics around a flat disk", color="white", pad=18
@@ -405,7 +405,7 @@ def main():
         )
         thumbnails.append((title, image.rgb.copy()))
         print(f"{slug}: {counts}; {records[-1]['seconds']:.1f}s", flush=True)
-    fig, axes = plt.subplots(4, 4, figsize=(20, 13), facecolor="#090d16")
+    fig, axes = plt.subplots(4, 4, figsize=(20, 13), facecolor="black")
     for ax, (title, rgb) in zip(axes.ravel(), thumbnails):
         ax.imshow(rgb.transpose(1, 0, 2), origin="lower")
         ax.set_title(title, color="white", fontsize=10)

@@ -76,7 +76,7 @@ class CelestialSky:
         """
         from PIL import Image
 
-        path = Path(__file__).resolve().parent / "assets" / "nasa_starmap_4k.jpg"
+        path = Path(__file__).resolve().parent / "assets" / "nasa_starmap_2020_4k.jpg"
         with Image.open(path) as image:
             rgb = np.asarray(image.convert("RGB"), dtype=float) / 255
         # NASA's right ascension increases leftward; grayt's phi increases
@@ -84,8 +84,8 @@ class CelestialSky:
         return cls(
             rgb[:, ::-1],
             longitude=longitude,
-            name="NASA SVS Deep Star Maps",
-            source="https://svs.gsfc.nasa.gov/3895/",
+            name="NASA SVS Deep Star Maps 2020",
+            source="https://svs.gsfc.nasa.gov/4851/",
         )
 
     @classmethod

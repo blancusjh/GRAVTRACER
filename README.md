@@ -9,7 +9,7 @@ geodesic core powers the Python package `grayt` and the `gravtracer` CLI.
 ![A lensed Page–Thorne disk around a spinning Kerr black hole](docs/images/kerr_disk.png)
 
 *Kerr black hole, spin 0.95, viewed at 70°. The background uses
-[NASA SVS Deep Star Maps](https://svs.gsfc.nasa.gov/3895/); disk colors are a
+[NASA SVS Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/); disk colors are a
 display mapping, not measured spectra.*
 
 ## Install
@@ -65,12 +65,12 @@ gravtracer render configs/celestial_kerr.yml -o celestial.png --npz
   desktop viewer for the supported Kerr and q-metric scenes.
 - Scientific `.npz` archives, reproducible galleries, and camera movies.
 
-## Geometry and ray paths
+## Gallery and ray paths
 
-![A curved grid on a Schwarzschild spatial slice](docs/images/spatial_curvature.png)
+![Gallery of GRAVTRACER black holes, stars, and other stationary models](docs/images/model_gallery.png)
 
-*Flamm's embedding of an equatorial, constant-time Schwarzschild spatial
-slice. The grid illustrates its intrinsic spatial curvature.*
+*Stationary model gallery with the catalog sky and black background. Disk and
+surface colors are display mappings.*
 
 ![Two 3D views of Kerr light-ray trajectories](docs/images/ray_trajectories_3d.png)
 

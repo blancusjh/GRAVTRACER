@@ -33,3 +33,7 @@ output/
 
 # Jupyter / meson
 .ipynb_checkpoints/
+
+# in-progress movie renders and encoder logs
+*.partial.mp4
+*.ffmpeg.log

@@ -66,6 +66,41 @@ motion and `g^3 F` rendering used to reproduce the original paper. It is not
 silently redefined. Both models are Kerr-only. A PageThorneDisk stores its Kerr
 parameters and rejects reuse with a different spin.
 
+### Translucent disks: `SlabDisk`
+
+A real disk is not a knife-edged opaque sheet: its optical depth falls with
+radius. `SlabDisk` wraps any `EmittingDisk` as a geometrically thin, gray slab
+with vertical optical depth `tau_perp(r, phi)`:
+
+```python
+disk = grayt.SlabDisk(grayt.PageThorneDisk(bh, r_out=60),
+                      lambda r, phi: 2.0 * (6.0 / r) ** 2)
+image = grayt.render_scene(bh, camera, disk, sky=sky, exposure=240, tone="log")
+```
+
+Rays are not stopped by the disk. The Fortran driver `render_crossings`
+records every crossing of the annulus (up to `max_crossings`, camera side
+first) and continues to the sky or the horizon. At crossing k the photon
+meets the slab at angle `eta` to its normal in the comoving frame, so it sees
+`tau_k = tau_perp / cos(eta)` and receives `g^4 S (1 - exp(-tau_k))`, attenuated
+by the optical depth of the crossings in front of it. The sky is attenuated by
+`exp(-sum tau_k)`. Here `S` is the wrapped disk's intensity, used as the
+slab's source function, and `g` comes from its four-velocity.
+
+As `tau_perp` goes to infinity this reproduces the opaque disk exactly
+(`tests/test_slab.py`); as it goes to zero the disk vanishes. With a
+`tau_perp` that falls outward, the inner disk stays opaque while the outer
+disk fades smoothly. Lensed starlight shows through it, and higher-order disk
+images seen through the slab are all counted. The slab has zero height: it
+does not occult itself. The optical-depth profile is a prescribed model
+input, not the output of a disk structure calculation.
+
+`tone="log"` is a display option of `render_scene`. It maps `log10(exposure I)`
+over `decades` (default 2.5) below white, so Doppler-boosted and dim sides of
+a disk stay readable together. The raw `intensity` map is unchanged.
+`CelestialSky.nasa_starmap(gain=...)` brightens the display sky in the same
+display-only sense.
+
 `CelestialSky.nasa_starmap()` loads the bundled NASA Scientific Visualization
 Studio [Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/) image, based on star
 catalogs. `CelestialSky("map.png")` accepts a user-provided equirectangular RGB map.
@@ -325,14 +360,16 @@ Playwright and its Chromium browser, or pass `--chrome /path/to/Chrome` to
 use an existing installation. The physics comparisons are in
 `tests/test_browser_observer.py` and require Node for JavaScript execution.
 
-The disk/sky edge is intentionally an occultation boundary: the example
-disk is an opaque, zero-thickness annulus cut off at r=20 M. Adjacent rays
-may terminate on the disk or reach the sky. The smooth axisymmetric disk
-does not reveal azimuthal camera motion through moving emission features,
-whereas background stars do move. Disk false colors and sky RGB have no
-common calibrated spectrum. A physical atmosphere or gradual optical-depth
-transition requires an appropriate radiation model, rather than blending
-background light through an opaque disk.
+In the browser observer the disk/sky edge is intentionally an occultation
+boundary: the example disk is an opaque, zero-thickness annulus cut off at
+r=20 M. Adjacent rays may terminate on the disk or reach the sky. The smooth
+axisymmetric disk does not reveal azimuthal camera motion through moving
+emission features, whereas background stars do move. Disk false colors and
+sky RGB have no common calibrated spectrum. For a gradual optical-depth
+transition, the Python renderer offers `SlabDisk` (above), which applies
+radiative transfer rather than blending background light through an
+opaque disk. `examples/kerr_movie.py` combines it with a moving camera and a
+disk pattern that turns with the flow.
 
 For a slower Kerr movie with reduced spatial aliasing:
 

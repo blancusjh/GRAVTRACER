@@ -28,7 +28,7 @@ MODULE RAYTRACER
 
    PUBLIC :: CAMERA_INIT, TRACE_RAY, RENDER_IMAGE, TRACE_GEODESIC
    PUBLIC :: TRACE_TO_PLANE, TRACE_BUNDLE_TO_PLANE
-   PUBLIC :: GET_HORIZON, GET_ISCO, RENDER_GEOMETRY
+   PUBLIC :: GET_HORIZON, GET_ISCO, RENDER_GEOMETRY, RENDER_CROSSINGS
 
    REAL(WP), PARAMETER :: HMIN = 1.0E-12_WP
    REAL(WP), PARAMETER :: HMAX_NEAR = 25.0_WP
@@ -528,5 +528,99 @@ CONTAINS
       END DO
       !$OMP END PARALLEL DO
    END SUBROUTINE RENDER_GEOMETRY
+
+   SUBROUTINE TRACE_RAY_CROSSINGS(MID, PAR, PT, PPHI, Y0, METHOD, RTOL, &
+                                  ATOL, R_ESC, RIN, ROUT, MAXSTEP, NCMAX, &
+                                  STATUS, YOUT, HERR_MAX, NCROSS, CROSS)
+      ! Like TRACE_RAY, but the equatorial annulus RIN <= r <= ROUT does
+      ! not stop the ray: each crossing state is stored (camera side first,
+      ! at most NCMAX) and integration continues to capture or escape.
+      ! STATUS is therefore 0, 1 or 3 -- never 2.
+      INTEGER, INTENT(IN)   :: MID, METHOD, MAXSTEP, NCMAX
+      REAL(WP), INTENT(IN)  :: PAR(4), PT, PPHI, Y0(6), RTOL, ATOL
+      REAL(WP), INTENT(IN)  :: R_ESC, RIN, ROUT
+      INTEGER, INTENT(OUT)  :: STATUS, NCROSS
+      REAL(WP), INTENT(OUT) :: YOUT(6), HERR_MAX, CROSS(6, NCMAX)
+      REAL(WP) :: Y(6), Y1(6), YC(6), H, HUSED, RCAP, EPAR(4), KS(6, 7)
+      INTEGER :: N
+      LOGICAL :: OK, K1V
+
+      RCAP = INNER_BOUNDARY(MID, PAR) + CAPTURE_BUFFER
+      Y = Y0
+      YOUT = Y0
+      H = -1.0_WP
+      HERR_MAX = 0.0_WP
+      STATUS = 3
+      NCROSS = 0
+      CROSS = 0.0_WP
+      K1V = .FALSE.
+
+      DO N = 1, MAXSTEP
+         CALL ADVANCE_ADAPTIVE(METHOD, MID, PAR, PT, PPHI, RTOL, ATOL, &
+                               Y, H, Y1, HUSED, OK, KS, K1V)
+         IF (.NOT. OK) RETURN
+         HERR_MAX = MAX(HERR_MAX, &
+                        ABS(HAMILTONIAN_CONSTRAINT(MID, PAR, PT, PPHI, Y1)))
+
+         IF (NCROSS < NCMAX .AND. COS(Y(3))*COS(Y1(3)) < 0.0_WP) THEN
+            EPAR = 0.0_WP
+            CALL REFINE_EVENT(METHOD, MID, PAR, PT, PPHI, Y, HUSED, &
+                              EVENT_EQUATOR, EPAR, Y1, KS, YC)
+            IF (YC(2) >= RIN .AND. YC(2) <= ROUT) THEN
+               NCROSS = NCROSS + 1
+               CROSS(:, NCROSS) = YC
+            END IF
+         END IF
+
+         IF (Y1(2) <= RCAP .OR. Y1(2) <= 0.0_WP) THEN
+            STATUS = 1
+            EPAR = (/RCAP, 0.0_WP, 0.0_WP, 0.0_WP/)
+            CALL REFINE_EVENT(METHOD, MID, PAR, PT, PPHI, Y, HUSED, &
+                              EVENT_SPHERE, EPAR, Y1, KS, YOUT)
+            RETURN
+         END IF
+         IF (Y1(2) >= R_ESC) THEN
+            STATUS = 0
+            EPAR = (/R_ESC, 0.0_WP, 0.0_WP, 0.0_WP/)
+            CALL REFINE_EVENT(METHOD, MID, PAR, PT, PPHI, Y, HUSED, &
+                              EVENT_SPHERE, EPAR, Y1, KS, YOUT)
+            RETURN
+         END IF
+
+         Y = Y1
+         IF (METHOD == METHOD_RKDP45) KS(:, 1) = KS(:, 7)   ! FSAL shift
+      END DO
+   END SUBROUTINE TRACE_RAY_CROSSINGS
+
+   SUBROUTINE RENDER_CROSSINGS(MID, PAR, R0, TH0, PH0, XS, YS, NX, NY, &
+                               METHOD, RTOL, ATOL, R_ESCAPE, RIN, ROUT, &
+                               MAXSTEP, NCMAX, ENDPOINT, MOMENTA, STATUS, &
+                               HERR, NCROSS, CROSS)
+      ! RENDER_GEOMETRY for a see-through equatorial annulus: every
+      ! crossing (t,r,theta,phi,p_r,p_theta) is returned in CROSS, in the
+      ! order the backward ray meets them, together with the final
+      ! escape/capture ENDPOINT. Radiative transfer is left to the caller.
+      INTEGER, INTENT(IN) :: MID, NX, NY, METHOD, MAXSTEP, NCMAX
+      REAL(WP), INTENT(IN) :: PAR(4), R0, TH0, PH0, XS(NX), YS(NY)
+      REAL(WP), INTENT(IN) :: RTOL, ATOL, R_ESCAPE, RIN, ROUT
+      REAL(WP), INTENT(OUT) :: ENDPOINT(6,NX,NY), MOMENTA(2,NX,NY), HERR(NX,NY)
+      REAL(WP), INTENT(OUT) :: CROSS(6,NCMAX,NX,NY)
+      INTEGER, INTENT(OUT) :: STATUS(NX,NY), NCROSS(NX,NY)
+      REAL(WP) :: Y0(6), PT, PPHI
+      INTEGER :: I, J
+      !$OMP PARALLEL DO COLLAPSE(2) SCHEDULE(DYNAMIC,4) DEFAULT(SHARED) &
+      !$OMP PRIVATE(I,J,Y0,PT,PPHI)
+      DO J = 1, NY
+         DO I = 1, NX
+            CALL CAMERA_INIT(MID, PAR, R0, TH0, PH0, -XS(I), YS(J), Y0, PT, PPHI)
+            MOMENTA(:,I,J) = (/PT,PPHI/)
+            CALL TRACE_RAY_CROSSINGS(MID, PAR, PT, PPHI, Y0, METHOD, RTOL, &
+                                     ATOL, R_ESCAPE, RIN, ROUT, MAXSTEP, &
+                                     NCMAX, STATUS(I,J), ENDPOINT(:,I,J), &
+                                     HERR(I,J), NCROSS(I,J), CROSS(:,:,I,J))
+         END DO
+      END DO
+      !$OMP END PARALLEL DO
+   END SUBROUTINE RENDER_CROSSINGS
 
 END MODULE RAYTRACER

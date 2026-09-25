@@ -46,14 +46,14 @@ __all__ = [
 __version__ = "0.3.0"
 
 from .metrics import CustomMetric, TabulatedMetric, ReissnerNordstrom, SphericalStar
-from .emission import TabulatedDisk, EmittingDisk, EmittingSurface, PageThorneDisk, circular_velocity, rotating_velocity
+from .emission import TabulatedDisk, EmittingDisk, EmittingSurface, PageThorneDisk, SlabDisk, circular_velocity, rotating_velocity
 from .sky import CelestialSky
-from .scene import RayBundle, SceneImage, trace_bundle, render_scene
+from .scene import RayBundle, SceneImage, trace_bundle, trace_crossings, render_scene
 
 __all__ += ["TabulatedDisk", "CustomMetric", "TabulatedMetric", "ReissnerNordstrom", "SphericalStar",
-            "EmittingDisk", "EmittingSurface", "PageThorneDisk", "circular_velocity",
+            "EmittingDisk", "EmittingSurface", "PageThorneDisk", "SlabDisk", "circular_velocity",
             "rotating_velocity", "CelestialSky", "RayBundle", "SceneImage",
-            "trace_bundle", "render_scene"]
+            "trace_bundle", "trace_crossings", "render_scene"]
 
 from .animation import orbit_cameras, render_movie
 __all__ += ["orbit_cameras", "render_movie"]

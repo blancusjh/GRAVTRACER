@@ -16,10 +16,13 @@ class CelestialSky:
     longitude: float = 0.0
     name: str = "celestial map"
     source: str | None = None
+    gain: float = 1.0
 
     def __post_init__(self):
         if not np.isfinite(self.longitude):
             raise ValueError("sky longitude must be finite")
+        if not np.isfinite(self.gain) or self.gain <= 0:
+            raise ValueError("sky gain must be positive and finite")
         if isinstance(self.image, (str, Path)):
             from PIL import Image
 
@@ -52,7 +55,8 @@ class CelestialSky:
         bottom = (1 - sx) * self.image[
             np.minimum(iy + 1, h - 1), ix % w
         ] + sx * self.image[np.minimum(iy + 1, h - 1), (ix + 1) % w]
-        return (1 - sy) * top + sy * bottom
+        rgb = (1 - sy) * top + sy * bottom
+        return rgb if self.gain == 1.0 else np.clip(self.gain * rgb, 0, 1)
 
     def metadata(self):
         result = {
@@ -61,14 +65,18 @@ class CelestialSky:
             "longitude_deg": self.longitude,
             "projection": "equirectangular",
             "values": "display RGB; uncalibrated",
+            "display_gain": self.gain,
         }
         if self.source:
             result["source"] = self.source
         return result
 
     @classmethod
-    def nasa_starmap(cls, longitude=180.0):
+    def nasa_starmap(cls, longitude=180.0, gain=1.0):
         """Bundled NASA SVS Deep Star Maps image, mapped to the escape sphere.
+
+        ``gain`` brightens the display map (clipped at white) so faint,
+        lensed stars stay visible next to a bright disk; it is display only.
 
         The catalog-based image is a visual background, not a calibrated
         radiance field. Its celestial coordinates are not aligned to a
@@ -86,6 +94,7 @@ class CelestialSky:
             longitude=longitude,
             name="NASA SVS Deep Star Maps 2020",
             source="https://svs.gsfc.nasa.gov/4851/",
+            gain=gain,
         )
 
     @classmethod
@@ -137,20 +146,43 @@ class CelestialSky:
 
 
 def compose_rgb(
-    intensity, status, theta, phi, sky=None, *, exposure=1.0, cmap="afmhot"
+    intensity, status, theta, phi, sky=None, *, exposure=1.0, cmap="afmhot",
+    transmission=None, tone="exp", decades=2.5,
 ):
-    """Display-only tone mapping; raw bolometric intensity is never modified."""
+    """Display-only tone mapping; raw bolometric intensity is never modified.
+
+    ``tone="exp"`` maps 1 - exp(-exposure I) onto the colormap. ``tone="log"``
+    maps log10(exposure I) over ``decades`` below white (exposure I = 1),
+    which keeps Doppler-beamed and dim sides of a disk readable at once.
+
+    With ``transmission`` (per pixel, 0..1) the sky is dimmed by it and the
+    emission color is added on top, as for light passing through a
+    semi-transparent emitter; without it emission replaces the sky.
+    """
     import matplotlib
 
     if not np.isfinite(exposure) or exposure <= 0:
         raise ValueError("exposure must be positive and finite")
+    if tone not in ("exp", "log"):
+        raise ValueError("tone must be 'exp' or 'log'")
+    if not np.isfinite(decades) or decades <= 0:
+        raise ValueError("decades must be positive and finite")
     rgb = np.zeros(status.shape + (3,))
     escaped = status == 0
     if sky is not None:
         rgb[escaped] = sky.sample(theta[escaped], phi[escaped])
     emitting = intensity > 0
-    value = -np.expm1(-exposure * intensity[emitting])
-    rgb[emitting] = matplotlib.colormaps[cmap](value)[..., :3]
+    if tone == "exp":
+        value = -np.expm1(-exposure * intensity[emitting])
+    else:
+        value = np.clip(
+            1 + np.log10(exposure * intensity[emitting]) / decades, 0, 1)
+    color = matplotlib.colormaps[cmap](value)[..., :3]
+    if transmission is None:
+        rgb[emitting] = color
+    else:
+        rgb *= np.asarray(transmission, float)[..., None]
+        rgb[emitting] = np.clip(rgb[emitting] + color, 0, 1)
     # Failed rays must remain recognizable rather than silently become a shadow.
     rgb[status == 3] = (1.0, 0.0, 1.0)
     return rgb

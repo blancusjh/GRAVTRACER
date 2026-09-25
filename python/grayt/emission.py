@@ -235,3 +235,68 @@ class TabulatedDisk(EmittingDisk):
     def load(cls, path):
         with np.load(path, allow_pickle=False) as d:
             return cls(d["radius"], d["intensity"], d["omega"], name=str(d["name"]))
+
+
+@dataclass
+class SlabDisk:
+    """A geometrically thin, gray emitting slab of finite optical depth.
+
+    ``disk`` supplies the source function S(r, phi, t) (its ``intensity``)
+    and the material four-velocity. ``optical_depth(r, phi)`` is the
+    vertical optical depth tau_perp of the slab (a number or a callable).
+    A ray crossing the slab at angle eta to its normal, measured in the
+    comoving frame, sees tau = tau_perp / cos(eta) and receives
+    g^4 S (1 - exp(-tau)); light from behind is attenuated by exp(-tau).
+    Every crossing along the ray (all image orders, up to
+    ``max_crossings``) and the celestial background are combined.
+
+    tau_perp -> infinity reproduces the opaque ``disk`` exactly; a finite
+    tau_perp that falls with radius gives a disk that fades smoothly and
+    lets lensed starlight through where it is optically thin. The slab
+    has zero geometric thickness: no self-occultation by its height.
+    """
+
+    disk: EmittingDisk
+    optical_depth: object = 1.0
+    max_crossings: int = 6
+    name: str = "gray thin slab"
+
+    def __post_init__(self):
+        if not isinstance(self.disk, EmittingDisk):
+            raise TypeError("SlabDisk.disk must be an EmittingDisk")
+        if not callable(self.optical_depth):
+            tau = float(self.optical_depth)
+            if not tau > 0:
+                raise ValueError("optical depth must be positive")
+        if not 1 <= int(self.max_crossings) <= 32:
+            raise ValueError("max_crossings must be between 1 and 32")
+
+    @property
+    def r_in(self):
+        return self.disk.r_in
+
+    @property
+    def r_out(self):
+        return self.disk.r_out
+
+    def tau_perp(self, r, phi):
+        if callable(self.optical_depth):
+            tau = np.asarray(self.optical_depth(r, phi), float)
+        else:
+            tau = np.full(np.shape(r), float(self.optical_depth))
+        tau = np.broadcast_to(tau, np.shape(r))
+        if not np.isfinite(tau).all() or np.any(tau < 0):
+            raise ValueError("optical depth must be finite and nonnegative")
+        return tau
+
+    def metadata(self):
+        return {
+            "type": type(self).__name__,
+            "name": self.name,
+            "source": self.disk.metadata(),
+            "optical_depth": getattr(self.optical_depth, "__doc__", None)
+            if callable(self.optical_depth) else float(self.optical_depth),
+            "max_crossings": int(self.max_crossings),
+            "radiation": "gray slab: g^4 S (1 - exp(-tau_perp / cos eta)), "
+                         "all crossings, attenuated background",
+        }

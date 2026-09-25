@@ -13,7 +13,7 @@ core:
 	    only: metric_cov metric_contra get_horizon get_isco camera_init \
 	          trace_ray render_image trace_geodesic flux_profile \
 	          init_flux_table get_disk_omega get_redshift \
-	          trace_to_plane trace_bundle_to_plane set_metric_table render_geometry :
+	          trace_to_plane trace_bundle_to_plane set_metric_table render_geometry render_crossings :
 	mv _core.*.so python/grayt/
 
 test:

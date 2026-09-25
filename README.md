@@ -8,7 +8,9 @@ geodesic core powers the Python package `grayt` and the `gravtracer` CLI.
 
 ![A lensed Page–Thorne disk around a spinning Kerr black hole](docs/images/kerr_disk.png)
 
-*Kerr black hole, spin 0.95, viewed at 70°. The background uses
+*Kerr black hole, spin 0.95, viewed at 76°. The disk is a translucent
+Page–Thorne slab: opaque near the hole and optically thin further out, so the
+lensed Milky Way behind it shows through. The background uses
 [NASA SVS Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/); disk colors are a
 display mapping, not measured spectra.*
 
@@ -58,8 +60,9 @@ gravtracer render configs/celestial_kerr.yml -o celestial.png --npz
 
 - Kerr and Zipoy–Voorhees geometries, plus stationary axisymmetric metric
   tables and spherical stellar or charged exteriors.
-- Thin disks, Page–Thorne disks, prescribed surfaces, gray volume radiation,
-  and celestial image maps. The legacy thin-disk model reproduces the
+- Thin disks, Page–Thorne disks, translucent gray slab disks (transfer at
+  every crossing), prescribed surfaces, gray volume radiation, and celestial
+  image maps. The legacy thin-disk model reproduces the
   [OSIRIS paper](https://arxiv.org/abs/2202.00086).
 - Double-precision CPU rendering; optional OpenCL rendering and a live
   desktop viewer for the supported Kerr and q-metric scenes.
@@ -70,8 +73,16 @@ gravtracer render configs/celestial_kerr.yml -o celestial.png --npz
 ![Gallery of GRAVTRACER black holes, stars, and other stationary models](docs/images/model_gallery.png)
 
 *Kerr holes arranged by spin and inclination, beside stellar, charged, and
-Zipoy–Voorhees exteriors, all against the catalog sky. Disk and surface colors
-are display mappings.*
+Zipoy–Voorhees exteriors. Every camera looks toward the Milky Way's core, so
+the bending of light shows in the distorted star field and its Einstein ring.
+Disk and surface colors are display mappings.*
+
+![A camera orbits a Kerr black hole while hot spots in its disk wind into spirals](docs/images/kerr_orbit.webp)
+
+*One orbit around a Kerr black hole, spin 0.9. Hot spots in the disk are
+advected with the Keplerian flow and shear into spiral arcs, and each frame
+includes the light-travel delay to every disk element. The pattern is
+prescribed, not MHD. Run `python examples/kerr_movie.py` for the full MP4.*
 
 ![A camera photographs an engraving behind a Kerr black hole through traced null geodesics](docs/images/image_formation_scene.png)
 

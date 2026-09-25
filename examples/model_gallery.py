@@ -153,11 +153,27 @@ The volume example imports prescribed gray radiation coefficients, not a GRMHD s
     (output / "index.html").write_text(page)
 
 
+INCLINATIONS = (20, 60, 84)
+EXPOSURE = 240.0   # white at I = 1/240, log tone over 2.5 decades
+DISK_R_OUT = 60.0
+
+
+def vertical_optical_depth(r, phi):
+    """tau_perp = 2 (6 M / r)^2: opaque inside ~8 M, thin beyond ~20 M."""
+    return 2.0 * (6.0 / r) ** 2
+
+
+def slab(disk):
+    """See-through gray slab with the disk's source function and motion."""
+    return grayt.SlabDisk(disk, vertical_optical_depth)
+
+
 def models():
     cases = []
-    for spin, angles in [(0.0, (30, 70, 85)), (0.5, (30, 70, 85)), (0.95, (30, 70, 85))]:
+    for spin in (0.0, 0.5, 0.95):
+        angles = INCLINATIONS
         st = grayt.BlackHole(spin)
-        disk = grayt.PageThorneDisk(st)
+        disk = slab(grayt.PageThorneDisk(st, r_out=DISK_R_OUT))
         for angle in angles:
             cases.append(
                 (
@@ -167,7 +183,7 @@ def models():
                     disk,
                     None,
                     angle,
-                    "Kerr / Page-Thorne / Keplerian / bolometric",
+                    "Kerr / Page-Thorne source in a gray slab, tau_perp=2(6/r)^2 / Keplerian / bolometric",
                 )
             )
     star = grayt.SphericalStar(radius=5.0)
@@ -206,13 +222,13 @@ def models():
     )
     for charge in (0.5, 0.8):
         st = grayt.ReissnerNordstrom(charge)
-        disk = grayt.EmittingDisk(
+        disk = slab(grayt.EmittingDisk(
             6.0,
-            20.0,
+            DISK_R_OUT,
             lambda r, ph, t: 2e-4 * (6 / r) ** 3 * (1 - np.sqrt(6 / r)),
             name="illustrative power-law emission",
             provenance={"warning": "not a self-consistent charged accretion solution"},
-        )
+        ))
         cases.append(
             (
                 f"charged_q{charge:g}",
@@ -262,7 +278,7 @@ def plate(thumbnails, path):
                 "quadrupole_q0.7": "Zipoy–Voorhees, $q = 0.7$"}
     other = [(captions.get(slug, t), rgb) for slug, t, rgb in thumbnails
              if not slug.startswith("kerr_")]
-    spins, angles = (0, 0.5, 0.95), (30, 70, 85)
+    spins, angles = (0, 0.5, 0.95), INCLINATIONS
     ny, nx = thumbnails[0][2].shape[1], thumbnails[0][2].shape[0]
     size = (20, 9.4)
     w, gap, left, top = 0.163, 0.007, 0.06, 0.8
@@ -276,8 +292,10 @@ def plate(thumbnails, path):
         ax.set_xticks([]); ax.set_yticks([])
         style.frame(ax)
         if caption:
-            ax.text(0.03, 0.04, caption, transform=ax.transAxes,
-                    color=style.INK, fontsize=11)
+            ax.text(0.03, 0.05, caption, transform=ax.transAxes,
+                    color=style.INK, fontsize=11,
+                    bbox=dict(facecolor="black", edgecolor="none", alpha=0.7,
+                              boxstyle="square,pad=0.3"))
         return ax
 
     for i, spin in enumerate(spins):
@@ -303,10 +321,10 @@ def plate(thumbnails, path):
     fig.text(left, 0.925, "Stationary spacetimes and the light they bend",
              color=style.INK, fontsize=26)
     fig.text(left, 0.03,
-             "Kerr: Page–Thorne flux, Keplerian motion, bolometric $g^4$. "
-             "Stars and charged holes: prescribed emission. Zipoy–Voorhees: "
-             "lensed sky only. Sky: NASA SVS Deep Star Maps 2020. "
-             "Fixed display exposure; colors are a display mapping.",
+             "Disks: gray thin slabs, $\\tau_\\perp = 2\\,(6M/r)^2$, every crossing "
+             "counted; Kerr source function Page–Thorne. Stars and charged holes: "
+             "prescribed emission. Sky: NASA SVS Deep Star Maps 2020, lensed. "
+             "Fixed log display, 2.5 decades.",
              color=style.MUTED, fontsize=10.5)
     fig.savefig(path, dpi=130)
     plt.close(fig)
@@ -427,13 +445,16 @@ def main():
     parser.add_argument("--skip-videos", action="store_true")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    sky = grayt.CelestialSky.nasa_starmap()
+    sky = grayt.CelestialSky.nasa_starmap(gain=1.4)
     plt.imsave(args.output / "celestial_map.png", sky.image)
+    # phi=90 deg puts the Milky Way's core behind the hole, so the lensed
+    # star field shows the curvature; the frame contains the Einstein ring.
     camera = grayt.Camera(
         r=100,
         theta=70,
-        x=(-26, 26),
-        y=(-16, 16),
+        phi=90,
+        x=(-40, 40),
+        y=(-25, 25),
         resolution=(192, 120) if args.quick else (640, 400),
     )
     records = []
@@ -446,7 +467,8 @@ def main():
             disk,
             surface=surface,
             sky=sky,
-            exposure=5000,
+            exposure=EXPOSURE,
+            tone="log",
             rtol=2e-9,
             atol=2e-11,
             escape_radius=200,
@@ -475,7 +497,7 @@ def main():
             (
                 "kerr_camera_orbit",
                 grayt.BlackHole(0.8),
-                grayt.PageThorneDisk(grayt.BlackHole(0.8)),
+                slab(grayt.PageThorneDisk(grayt.BlackHole(0.8), r_out=DISK_R_OUT)),
                 None,
             ),
             ("stellar_camera_orbit", grayt.SphericalStar(5), None, next(m[4] for m in models() if m[0] == "star_spots")),
@@ -489,7 +511,8 @@ def main():
                 disk=disk,
                 surface=surface,
                 sky=sky,
-                exposure=5000,
+                exposure=EXPOSURE,
+                tone="log",
                 archive_every=max(1, frames // 4),
                 coordinate_time_step=1 / 24,
                 rtol=1e-8,

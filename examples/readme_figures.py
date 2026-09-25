@@ -29,31 +29,35 @@ style.use()
 def disk_figure():
     spacetime = grayt.BlackHole(a=0.95)
     camera = grayt.Camera(
-        r=100, theta=70, x=(-26, 26), y=(-16, 16), resolution=(900, 550)
+        r=100, theta=76, phi=90, x=(-40, 40), y=(-25, 25), resolution=(1120, 700)
     )
+    disk = grayt.SlabDisk(grayt.PageThorneDisk(spacetime, r_out=60),
+                          lambda r, phi: 2.0 * (6.0 / r) ** 2)
     image = grayt.render_scene(
         spacetime,
         camera,
-        grayt.PageThorneDisk(spacetime),
-        sky=grayt.CelestialSky.nasa_starmap(),
-        exposure=5000,
+        disk,
+        sky=grayt.CelestialSky.nasa_starmap(gain=1.4),
+        exposure=240,
+        tone="log",
         escape_radius=200,
         rtol=2e-9,
         atol=2e-11,
     )
-    fig = plt.figure(figsize=(12.8, 7.8))
-    ax = fig.add_axes((0.07, 0.12, 0.88, 0.74))
+    fig = plt.figure(figsize=(12.8, 8.4))
+    ax = fig.add_axes((0.07, 0.11, 0.88, 0.75))
     ax.imshow(image.rgb.transpose(1, 0, 2), origin="lower", extent=image.extent)
     ax.set(xlabel="image-plane $x$ / M", ylabel="image-plane $y$ / M")
     style.frame(ax)
     fig.text(0.07, 0.945, "Kerr black hole, $a = 0.95$", color=INK,
              fontsize=21, va="top")
-    fig.text(0.07, 0.895, "Page–Thorne thin disk seen at 70° inclination "
-             "against the NASA SVS 2020 catalog sky", color=MUTED,
-             fontsize=12.5, style="italic", va="top")
-    fig.text(0.07, 0.03, "Disk colors are a display mapping of the "
-             "bolometric intensity, not measured spectra.", color=MUTED,
-             fontsize=9.5)
+    fig.text(0.07, 0.895, "Translucent Page–Thorne disk at 76° inclination, "
+             "with the Milky Way lensed into an Einstein ring behind it",
+             color=MUTED, fontsize=12.5, style="italic", va="top")
+    fig.text(0.07, 0.03, "Gray thin slab, $\\tau_\\perp = 2\\,(6M/r)^2$, "
+             "transfer at every disk crossing. Log display over 2.5 decades; "
+             "colors are a display mapping, not spectra. "
+             "Sky: NASA SVS Deep Star Maps 2020.", color=MUTED, fontsize=9.5)
     fig.savefig(IMAGES / "kerr_disk.png", dpi=185)
     plt.close(fig)
 

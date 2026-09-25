@@ -6,7 +6,8 @@ import numpy as np
 
 from . import _core
 from ._runtime import metric_context, metadata
-from .emission import EmittingDisk, PageThorneDisk, metric_samples, frequency_shift
+from .emission import (EmittingDisk, PageThorneDisk, SlabDisk, metric_samples,
+                       frequency_shift)
 from .sky import compose_rgb
 
 
@@ -195,6 +196,97 @@ def trace_bundle(
 
 
 @metric_context
+def trace_crossings(
+    spacetime,
+    camera,
+    slab,
+    *,
+    escape_radius=None,
+    method="rkdp45",
+    rtol=1e-8,
+    atol=1e-10,
+    max_steps=500_000,
+):
+    """Trace rays through a see-through equatorial annulus.
+
+    Returns (RayBundle of final escape/capture states, crossing count
+    (nx,ny), crossing states (nx,ny,max_crossings,6)), crossings ordered
+    from the camera outward.
+    """
+    from .api import _method_id
+
+    escape = 1.1 * camera.r if escape_radius is None else float(escape_radius)
+    if not spacetime.capture_radius < slab.r_in < slab.r_out < escape:
+        raise ValueError("slab must lie between the inner boundary and escape sphere")
+    if not spacetime.capture_radius < camera.r < escape:
+        raise ValueError("require inner boundary < camera radius < escape radius")
+    nx, ny = camera.resolution
+    xs = camera.x[0] + (np.arange(nx) + 0.5) * (camera.x[1] - camera.x[0]) / nx
+    ys = camera.y[0] + (np.arange(ny) + 0.5) * (camera.y[1] - camera.y[0]) / ny
+    if max(abs(xs)) ** 2 + max(abs(ys)) ** 2 >= camera.r**2:
+        raise ValueError("image-plane direction cosines exceed the camera hemisphere")
+    ncmax = int(slab.max_crossings)
+    ep, mom, status, herr, ncross, cross = _core.raytracer.render_crossings(
+        spacetime.mid, spacetime.par, camera.r, np.deg2rad(camera.theta),
+        np.deg2rad(camera.phi), xs, ys, _method_id(method), rtol, atol,
+        escape, slab.r_in, slab.r_out, max_steps, ncmax)
+    rays = RayBundle(
+        ep.transpose(1, 2, 0).copy(),
+        mom.transpose(1, 2, 0).copy(),
+        status,
+        herr,
+        camera.extent,
+        {
+            "spacetime": metadata(spacetime),
+            "camera": metadata(camera),
+            "escape_radius": escape,
+            "method": method,
+            "rtol": rtol,
+            "atol": atol,
+            "max_steps": max_steps,
+            "backend": "Fortran CPU fp64",
+            "coordinates": "t,r,theta,phi; G=c=M=1; angles radians",
+            "momentum_convention": "legacy past-oriented covector; E_obs=1",
+            "slab_crossings": ncmax,
+        },
+    )
+    return rays, ncross, cross.transpose(2, 3, 1, 0).copy()
+
+
+def _slab_transfer(spacetime, slab, rays, ncross, cross, observer_time):
+    """Observed intensity, first-crossing g, and optical depth per pixel."""
+    shape = rays.status.shape
+    intensity = np.zeros(shape)
+    tau_total = np.zeros(shape)
+    gmap = np.zeros(shape)
+    for k in range(cross.shape[2]):
+        mask = ncross > k
+        if not mask.any():
+            break
+        y, constants = cross[mask, k], rays.momenta[mask]
+        r, th, ph = y[:, 1], y[:, 2], y[:, 3]
+        p = np.stack((constants[:, 0], y[:, 4], y[:, 5], constants[:, 1]), axis=-1)
+        u = slab.disk.four_velocity(spacetime, r, th, ph)
+        g = frequency_shift(spacetime, r, th, p, u)
+        # |cos eta| between photon and slab normal in the comoving frame:
+        # u has no theta component, so p_(theta-hat) = p_theta/sqrt(g_thth).
+        g_thth = metric_samples(spacetime, r, th)[:, 3]
+        cos_eta = np.clip(np.abs(y[:, 5]) * g / np.sqrt(g_thth), 1e-6, 1.0)
+        tau = slab.tau_perp(r, ph) / cos_eta
+        t = observer_time - np.abs(y[:, 0])
+        source = np.broadcast_to(
+            np.asarray(slab.disk.intensity(r, ph, t), float), r.shape)
+        if np.any(~np.isfinite(source)) or np.any(source < 0):
+            raise ValueError("emitted intensity must be finite and nonnegative")
+        foreground = tau_total[mask]
+        intensity[mask] += np.exp(-foreground) * g**4 * source * -np.expm1(-tau)
+        tau_total[mask] = foreground + tau
+        if k == 0:
+            gmap[mask] = g
+    return intensity, gmap, tau_total
+
+
+@metric_context
 def render_scene(
     spacetime,
     camera,
@@ -204,15 +296,23 @@ def render_scene(
     sky=None,
     exposure=1.0,
     observer_time=0.0,
+    tone="exp",
+    decades=2.5,
     **trace_options,
 ):
-    """Vacuum propagation + opaque bolometric surfaces + celestial RGB map.
+    """Vacuum propagation + bolometric surfaces + celestial RGB map.
 
+    Opaque disks stop rays; a ``SlabDisk`` is see-through with gray
+    transfer at every crossing. ``tone``/``decades`` choose the display
+    curve (see ``compose_rgb``); raw intensities are unaffected.
     Background RGB is an uncalibrated map on a finite coordinate sphere,
     not an infinite-distance direction map or a redshifted stellar spectrum.
     """
     from .matter import ThinDisk
 
+    if isinstance(disk, SlabDisk):
+        return _render_slab(spacetime, camera, disk, surface, sky, exposure,
+                            observer_time, tone, decades, trace_options)
     legacy = isinstance(disk, ThinDisk)
     source_metadata = metadata(disk) if disk else None
     if legacy:
@@ -272,6 +372,8 @@ def render_scene(
         rays.endpoint[..., 3],
         sky,
         exposure=exposure,
+        tone=tone,
+        decades=decades,
     )
     meta = {
         **rays.meta,
@@ -282,10 +384,61 @@ def render_scene(
         "display": {
             "exposure": exposure,
             "cmap": "afmhot",
-            "transfer": "1-exp(-exposure*I)",
+            "transfer": _transfer(tone, decades),
         },
         "radiation": "legacy disk g^3"
         if legacy
         else "bolometric g^4; no volume transfer",
     }
     return SceneImage(rays, intensity, gmap, rgb, meta)
+
+
+def _transfer(tone, decades):
+    if tone == "exp":
+        return "1-exp(-exposure*I)"
+    return f"log10(exposure*I) over {decades:g} decades"
+
+
+def _render_slab(spacetime, camera, slab, surface, sky, exposure, observer_time,
+                 tone, decades, trace_options):
+    from .volume import VolumeImage
+
+    if surface is not None:
+        raise ValueError("SlabDisk scenes do not combine with emitting surfaces")
+    if (
+        isinstance(slab.disk, PageThorneDisk)
+        and metadata(spacetime) != slab.disk.spacetime_metadata
+    ):
+        raise ValueError("PageThorneDisk was built for a different Kerr spacetime")
+    trace_options = {k: v for k, v in trace_options.items()
+                     if k != "constraint_monitor"}
+    rays, ncross, cross = trace_crossings(spacetime, camera, slab, **trace_options)
+    intensity, gmap, tau = _slab_transfer(spacetime, slab, rays, ncross, cross,
+                                          observer_time)
+    rgb = compose_rgb(
+        intensity,
+        rays.status,
+        rays.endpoint[..., 2],
+        rays.endpoint[..., 3],
+        sky,
+        exposure=exposure,
+        transmission=np.exp(-tau),
+        tone=tone,
+        decades=decades,
+    )
+    meta = {
+        **rays.meta,
+        "disk": slab.metadata(),
+        "surface": None,
+        "sky": sky.metadata() if sky else None,
+        "observer_time": observer_time,
+        "display": {
+            "exposure": exposure,
+            "cmap": "afmhot",
+            "transfer": _transfer(tone, decades) + ", added to exp(-tau) * sky",
+        },
+        "radiation": "bolometric g^4; gray thin slab at every crossing",
+        "crossing_counts": np.bincount(ncross.ravel(),
+                                       minlength=slab.max_crossings + 1).tolist(),
+    }
+    return VolumeImage(rays, intensity, gmap, rgb, meta, tau)

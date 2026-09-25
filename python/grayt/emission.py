@@ -345,7 +345,8 @@ class SlabDisk:
         }
 
 
-def spreading_disk(spacetime, r_c=8.0, tau_c=1e4, r_out=None, base=None):
+def spreading_disk(spacetime, r_c=8.0, tau_c=1e4, r_out=None, base=None,
+                   r_trunc=None, trunc_power=8.0):
     """Page-Thorne disk with the outer edge of a viscously spreading disk.
 
     A steady thin disk has no natural outer edge; a real one ends where it
@@ -371,6 +372,13 @@ def spreading_disk(spacetime, r_c=8.0, tau_c=1e4, r_out=None, base=None):
 
     ``base`` replaces the Page-Thorne emission with another EmittingDisk
     (any metric); its intensity and four-velocity are tapered the same way.
+
+    ``r_trunc`` truncates the gas itself (a finite disk, e.g. set by the
+    circularization radius of the inflow or by tidal truncation): both the
+    dissipation and the surface density are multiplied by
+    exp(-(r / r_trunc)^trunc_power). Without it the exponential taper
+    leaves a cold outer skirt that is ~1e7 times fainter than the inner
+    disk yet still opaque at grazing incidence (tau / flux grows as r^2).
     """
     r_out = 15.0 * r_c if r_out is None else float(r_out)
     if base is None:
@@ -379,17 +387,25 @@ def spreading_disk(spacetime, r_c=8.0, tau_c=1e4, r_out=None, base=None):
         raise ValueError("base disk must extend to r_out")
     if not (r_c > base.r_in and tau_c > 0):
         raise ValueError("require r_c > the disk's inner edge and tau_c > 0")
+    if r_trunc is not None and not (r_trunc > base.r_in and trunc_power > 0):
+        raise ValueError("require r_trunc > the inner edge and trunc_power > 0")
+
+    def cut(r):
+        if r_trunc is None:
+            return 1.0
+        return np.exp(-(np.asarray(r, float) / r_trunc) ** trunc_power)
     disk = EmittingDisk(
         base.r_in, r_out,
-        lambda r, phi, t: base.intensity(r, phi, t) * np.exp(-r / r_c),
+        lambda r, phi, t: base.intensity(r, phi, t) * np.exp(-r / r_c) * cut(r),
         base.four_velocity,
         name=f"{base.name} x exp(-r/{r_c:g}) (spreading disk)",
         provenance={"model": "Lynden-Bell & Pringle 1974, gamma=1",
-                    "r_c": r_c, "tau_c": tau_c, "base": base.metadata()})
+                    "r_c": r_c, "tau_c": tau_c, "r_trunc": r_trunc,
+                    "trunc_power": trunc_power, "base": base.metadata()})
 
     def tau_perp(r, phi):
         """tau_c (r_c / r) exp(1 - r / r_c)"""
-        return tau_c * (r_c / r) * np.exp(1.0 - r / r_c)
+        return tau_c * (r_c / r) * np.exp(1.0 - r / r_c) * cut(r)
 
     return SlabDisk(disk, tau_perp, conserve_flux=False,
                     name="viscously spreading thin disk")

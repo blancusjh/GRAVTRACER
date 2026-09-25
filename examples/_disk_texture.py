@@ -20,7 +20,7 @@ import grayt
 
 
 def turbulent_disk(bh, r_c=5.0, n_knots=160, amplitude=0.9, age=240.0,
-                   seed=11, tau_c=1e4):
+                   seed=11, tau_c=1e4, r_trunc=None):
     """Spreading thin disk (grayt.spreading_disk) with sheared knots."""
     base = grayt.PageThorneDisk(bh, r_out=15 * r_c)
     rng = np.random.default_rng(seed)
@@ -51,4 +51,5 @@ def turbulent_disk(bh, r_c=5.0, n_knots=160, amplitude=0.9, age=240.0,
         name="Page-Thorne x sheared knots (prescribed, not MHD)",
         provenance={"knots": n_knots, "seed": seed, "age_M": age,
                     "amplitude": amplitude})
-    return grayt.spreading_disk(bh, r_c=r_c, tau_c=tau_c, base=knots)
+    return grayt.spreading_disk(bh, r_c=r_c, tau_c=tau_c, base=knots,
+                                r_trunc=r_trunc)

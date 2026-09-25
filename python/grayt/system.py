@@ -130,6 +130,8 @@ class System:
             kind = sky_cfg.pop("type", "procedural")
             if kind == "procedural":
                 sky = CelestialSky.procedural(**sky_cfg)
+            elif kind == "nasa":
+                sky = CelestialSky.nasa_starmap(**sky_cfg)
             elif kind == "image":
                 sky = CelestialSky(base / sky_cfg.pop("path"), **sky_cfg)
             else:

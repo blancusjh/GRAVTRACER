@@ -15,6 +15,7 @@ class CelestialSky:
     image: object
     longitude: float = 0.0
     name: str = "celestial map"
+    source: str | None = None
 
     def __post_init__(self):
         if not np.isfinite(self.longitude):
@@ -54,13 +55,38 @@ class CelestialSky:
         return (1 - sy) * top + sy * bottom
 
     def metadata(self):
-        return {
+        result = {
             "name": self.name,
             "sha256": self.digest,
             "longitude_deg": self.longitude,
             "projection": "equirectangular",
             "values": "display RGB; uncalibrated",
         }
+        if self.source:
+            result["source"] = self.source
+        return result
+
+    @classmethod
+    def nasa_starmap(cls, longitude=180.0):
+        """Bundled NASA SVS Deep Star Maps image, mapped to the escape sphere.
+
+        The catalog-based image is a visual background, not a calibrated
+        radiance field. Its celestial coordinates are not aligned to a
+        particular black-hole coordinate frame.
+        """
+        from PIL import Image
+
+        path = Path(__file__).resolve().parent / "assets" / "nasa_starmap_4k.jpg"
+        with Image.open(path) as image:
+            rgb = np.asarray(image.convert("RGB"), dtype=float) / 255
+        # NASA's right ascension increases leftward; grayt's phi increases
+        # rightward. Put the source map's central RA=0 at phi=0 as well.
+        return cls(
+            rgb[:, ::-1],
+            longitude=longitude,
+            name="NASA SVS Deep Star Maps",
+            source="https://svs.gsfc.nasa.gov/3895/",
+        )
 
     @classmethod
     def procedural(cls, width=2048, height=1024, seed=42, stars=9000, grid=False):

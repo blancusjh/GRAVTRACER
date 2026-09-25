@@ -3,13 +3,14 @@
 Fast, simple and reliable light tracer in curved spaces.
 
 GRAVTRACER traces light around compact objects to render black-hole shadows,
-accretion disks, lensing, stellar surfaces, and synthetic skies. A Fortran
+accretion disks, lensing, stellar surfaces, and celestial skies. A Fortran
 geodesic core powers the Python package `grayt` and the `gravtracer` CLI.
 
 ![A lensed Page–Thorne disk around a spinning Kerr black hole](docs/images/kerr_disk.png)
 
-*Kerr black hole, spin 0.95, viewed at 70°. The sky is synthetic and the colors
-are a display mapping, not measured spectra.*
+*Kerr black hole, spin 0.95, viewed at 70°. The background uses
+[NASA SVS Deep Star Maps](https://svs.gsfc.nasa.gov/3895/); disk colors are a
+display mapping, not measured spectra.*
 
 ## Install
 
@@ -39,7 +40,7 @@ camera = grayt.Camera(r=100, theta=70, resolution=(640, 400))
 disk = grayt.PageThorneDisk(black_hole)
 image = grayt.render_scene(
     black_hole, camera, disk,
-    sky=grayt.CelestialSky.procedural(seed=42),
+    sky=grayt.CelestialSky.nasa_starmap(),
     exposure=5000,
 )
 image.plot()
@@ -64,10 +65,18 @@ gravtracer render configs/celestial_kerr.yml -o celestial.png --npz
   desktop viewer for the supported Kerr and q-metric scenes.
 - Scientific `.npz` archives, reproducible galleries, and camera movies.
 
-![Comparison of Kerr, stellar, charged, and quadrupolar models](docs/images/model_gallery.png)
+## Geometry and ray paths
 
-*Model comparison with fixed display exposure. Charged and quadrupolar panels
-are theoretical examples.*
+![A curved grid on a Schwarzschild spatial slice](docs/images/spatial_curvature.png)
+
+*Flamm's embedding of an equatorial, constant-time Schwarzschild spatial
+slice. The grid illustrates its intrinsic spatial curvature.*
+
+![Two 3D views of Kerr light-ray trajectories](docs/images/ray_trajectories_3d.png)
+
+*The same traced null rays from two angles. Colors distinguish escaped,
+strongly bent, and captured rays. Positions use a pseudo-Cartesian embedding
+of Boyer–Lindquist coordinates.*
 
 Generate the gallery yourself with:
 

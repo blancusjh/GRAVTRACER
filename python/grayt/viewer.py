@@ -315,7 +315,7 @@ class InteractiveViewer:
         if self.background == "celestial" and self.sky is None:
             from .sky import CelestialSky
 
-            self.sky = CelestialSky.procedural(seed=42, grid=True)
+            self.sky = CelestialSky.nasa_starmap()
         return compose_frame(
             image,
             self.mode,

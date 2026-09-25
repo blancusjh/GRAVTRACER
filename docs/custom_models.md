@@ -45,7 +45,7 @@ import grayt
 
 bh = grayt.BlackHole(a=0.8)
 disk = grayt.PageThorneDisk(bh, r_out=20)
-sky = grayt.CelestialSky.procedural(seed=42, grid=True)
+sky = grayt.CelestialSky.nasa_starmap()
 camera = grayt.Camera(r=100, theta=70, x=(-26, 26), y=(-16, 16),
                      resolution=(640, 400))
 image = grayt.render_scene(bh, camera, disk, sky=sky,
@@ -66,11 +66,19 @@ motion and `g^3 F` rendering used to reproduce the original paper. It is not
 silently redefined. Both models are Kerr-only. A PageThorneDisk stores its Kerr
 parameters and rejects reuse with a different spin.
 
-`CelestialSky("map.png")` accepts a user-provided equirectangular RGB map.
-North is row zero; longitude phi=0 is at the left edge, increasing rightward.
+`CelestialSky.nasa_starmap()` loads the bundled NASA Scientific Visualization
+Studio [Deep Star Maps](https://svs.gsfc.nasa.gov/3895/) image, based on star
+catalogs. `CelestialSky("map.png")` accepts a user-provided equirectangular RGB map.
+The bundled loader reverses NASA's leftward right-ascension axis and centers
+RA=0 at `phi=0` for display. This is a coordinate convention, not an
+astrometric alignment with the black hole.
+
+For user maps, north is row zero; longitude phi=0 is at the left edge,
+increasing rightward.
 Sampling is bilinear with periodic longitude. `longitude` rotates the map in
-degrees. The procedural sky is a deterministic illustrative star field with
-a diffuse band, **not a measured Milky Way map or catalog**.
+degrees. NASA's map is a display image; its celestial axes have no specified
+alignment with a black hole's coordinates. The optional procedural sky remains
+a deterministic illustration, **not a measured Milky Way map or catalog**.
 
 Sky maps are sampled at the finite coordinate escape sphere, not the
 asymptotic momentum direction. Change `escape_radius` to check this effect.
@@ -245,8 +253,8 @@ PYTHONPATH=python python examples/validate_custom_metrics.py
 PYTHONPATH=python python examples/volume_snapshot.py --convergence-only
 ```
 
-The gallery generates 14 scientific panels, a comparison sheet, a synthetic
-celestial map, raw NPZ results, and a JSON manifest. It prioritizes Kerr
+The gallery generates 14 scientific panels, a comparison sheet, the bundled
+NASA celestial map, raw NPZ results, and a JSON manifest. It prioritizes Kerr
 Page–Thorne disks and spherical stellar surfaces; charged and quadrupolar
 geometries are explicitly labeled theoretical comparisons. Colors use a
 fixed exposure. The q-metric examples have differing ADM mass, stated on the
@@ -272,7 +280,7 @@ below. The gallery opens each selected example in a separate native window;
 the browser may ask to open the registered application. No server is needed.
 Re-run installation after moving the repository or Python environment.
 
-Native windows start on black. **B** cycles black, the same seeded celestial
+Native windows start on black. **B** cycles black, the same NASA celestial
 map used in the gallery, and the original colored diagnostic grid. Background
 changes recolor cached rays without retracing. Kerr Page–Thorne views use
 OpenCL geometry with Keplerian bolometric g^4 emission and the same escape

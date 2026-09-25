@@ -96,6 +96,11 @@ py.install_sources(
 )
 
 py.install_sources(
+  ['python/grayt/assets/nasa_starmap_4k.jpg'],
+  subdir: 'grayt/assets',
+)
+
+py.install_sources(
   [
     'python/grayt/gpu/__init__.py',
     'python/grayt/gpu/engine.py',

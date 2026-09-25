@@ -51,7 +51,7 @@ def main():
     cameras = list(grayt.orbit_cameras(cam, args.frames))
     st = grayt.BlackHole(0.8)
     disk = grayt.PageThorneDisk(st)
-    sky = grayt.CelestialSky.procedural(2048, 1024, seed=42, grid=True)
+    sky = grayt.CelestialSky.nasa_starmap()
     records = [None] * args.frames
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="gravtracer-orbit-") as tmp:

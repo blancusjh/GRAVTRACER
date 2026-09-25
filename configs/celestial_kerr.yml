@@ -7,7 +7,7 @@ camera:
   y: [-16, 16]
   resolution: [640, 400]
 disk: {model: page-thorne-bolometric, r_out: 20}
-sky: {type: procedural, seed: 42, grid: true}
+sky: {type: nasa}
 exposure: 5000
 escape_radius: 200
 integrator: {method: rkdp45, rtol: 2.0e-9, atol: 2.0e-11}

@@ -2,7 +2,8 @@
 
 Run: PYTHONPATH=python python examples/model_gallery.py --output output/models
 Use --quick for a small smoke gallery; --skip-videos for stills only.
-All comparisons use M=1. The sky is synthetic; colors are display mappings.
+All comparisons use M=1. The sky uses the bundled NASA SVS star map;
+colors are display mappings.
 """
 
 from __future__ import annotations
@@ -134,7 +135,7 @@ p{color:#b9c5d6}.intro{max-width:960px;margin-bottom:32px}
 </style>
 <h1>Stationary spacetimes and light</h1><div class="intro">
 <p>Kerr Page–Thorne disks, spherical stellar surfaces, and theoretical charged/quadrupolar comparisons.
-The sky is synthetic; false colors use fixed exposure. All propagation is computed in the specified metric.</p>
+The sky uses NASA SVS Deep Star Maps; false colors use fixed exposure. All propagation is computed in the specified metric.</p>
 <p>Observer movies retrace moving camera positions. The 3D geodesic movie is a coordinate visualization.
 The volume example imports prescribed gray radiation coefficients, not a GRMHD solution.</p>
 <p><a href="gallery.png">Full comparison sheet</a> · <a href="manifest.json">Scientific manifest</a> ·
@@ -365,7 +366,7 @@ def main():
     parser.add_argument("--skip-videos", action="store_true")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    sky = grayt.CelestialSky.procedural(2048, 1024, seed=42, grid=True)
+    sky = grayt.CelestialSky.nasa_starmap()
     plt.imsave(args.output / "celestial_map.png", sky.image)
     camera = grayt.Camera(
         r=100,
@@ -419,7 +420,7 @@ def main():
     fig.text(
         0.04,
         0.025,
-        "Kerr panels: Page-Thorne + Keplerian motion. Stellar and charged panels: prescribed emission. Sky: synthetic. Fixed display exposure.",
+        "Kerr panels: Page-Thorne + Keplerian motion. Stellar and charged panels: prescribed emission. Sky: NASA SVS. Fixed display exposure.",
         color="#b9c3d2",
     )
     fig.tight_layout(rect=(0, 0.045, 1, 0.97))

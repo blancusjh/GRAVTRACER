@@ -90,14 +90,16 @@ def safe_json(value):
 
 def write_observer(output):
     assets = Path(grayt.__file__).parent / "web"
-    sky = grayt.CelestialSky.procedural(2048, 1024, seed=42, grid=True)
+    sky = grayt.CelestialSky.nasa_starmap()
     stream = io.BytesIO()
-    Image.fromarray(np.round(255 * sky.image).astype(np.uint8)).save(
-        stream, format="PNG"
+    Image.fromarray(np.round(255 * sky.image).astype(np.uint8)).resize(
+        (2048, 1024), Image.Resampling.LANCZOS
+    ).save(
+        stream, format="JPEG", quality=92
     )
     config = {
         "models": browser_models(),
-        "skyURL": "data:image/png;base64,"
+        "skyURL": "data:image/jpeg;base64,"
         + base64.b64encode(stream.getvalue()).decode("ascii"),
         "palette": np.round(255 * matplotlib.colormaps["afmhot"](np.arange(256))[:, :3])
         .astype(int)
@@ -143,7 +145,7 @@ does not change when only the observer's azimuth changes; stars behind it do mov
 Four subrays per displayed pixel smooth sampling artifacts at the edge.</p>
 <p>This is a stationary scene, sampled by ZAMO observers at r = 100 M. Browser geodesics
 use float64 RKDP45 (preview tolerance 10⁻⁶, refined 10⁻⁸). Arbitrary inclinations
-are retraced; azimuth changes reuse axial symmetry. The sky is a synthetic RGB texture
+are retraced; azimuth changes reuse axial symmetry. The sky is a NASA SVS RGB display map
 on the r = 200 M coordinate sphere. Emission colors and the sky brightness control are
 display choices, not calibrated spectra. Charged and quadrupolar models are theoretical
 comparisons. Imported metric tables and volume transfer use the Python renderer.</p>

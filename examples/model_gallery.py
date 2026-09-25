@@ -511,7 +511,6 @@ def main():
                 exposure=EXPOSURE,
                 tone="log",
                 decades=DECADES,
-            decades=DECADES,
                 archive_every=max(1, frames // 4),
                 coordinate_time_step=1 / 24,
                 rtol=1e-8,

@@ -158,7 +158,7 @@ INCLINATIONS = (20, 60, 84)
 # (like EHT images), spanning the whole opaque disk so none of it is shown
 # black. True-color photometry is shown separately in docs/images.
 R_C, TAU_C = 8.0, 1e3   # spreading-disk scale radius [M], tau_perp(r_c)
-DECADES = 6.0
+DECADES = 8.0           # spans all gas that blocks starlight: none is shown black
 
 def models():
     cases = []
@@ -315,7 +315,7 @@ def plate(thumbnails, path):
     fig.text(left, 0.925, "Stationary spacetimes and the light they bend",
              color=style.INK, fontsize=26)
     fig.text(left, 0.03,
-             "Color: bolometric intensity on one log scale (6 decades) for all "
+             "Color: bolometric intensity on one log scale (8 decades) for all "
              "panels, not true color. Spreading thin disks (Page–Thorne inside), "
              "gray slab transfer. Stars and charged holes: prescribed emission. "
              "Sky: NASA SVS Deep Star Maps 2020, lensed. Observers at $r = 400$ M.",

@@ -46,7 +46,7 @@ from grayt.animation import VideoWriter, display_frame
 
 SPIN = 0.9
 R_C, TAU_C = 5.0, 1e3   # spreading-disk scale radius [M], tau_perp(r_c)
-DECADES = 6.0           # log color scale spanning the whole opaque disk
+DECADES = 8.0           # log color scale spanning all gas that blocks starlight
 SKY_GAIN = 1.4          # display brightening of the (uncalibrated) star map
 # The Milky Way's core lies behind the hole for a camera at phi = 90 deg.
 # Start 120 deg earlier, over sparse sky, so the band sweeps in behind the

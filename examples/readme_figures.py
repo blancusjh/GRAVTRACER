@@ -31,7 +31,7 @@ style.use()
 # radius 5 M so the observer stays well outside the glowing disk.
 CLOSE = dict(r=150, theta=84, phi=90, x=(-40, 40), y=(-25, 25))
 EXPOSURE = 25.0      # white at I = 0.04 (half the peak for a = 0.95)
-DECADES = 6.0        # spans the whole opaque disk, so none of it shows black
+DECADES = 8.0        # spans all gas that blocks starlight, so none is shown black
 
 
 def close_scene(resolution):
@@ -66,7 +66,7 @@ def disk_figure():
              "lensed over and under the shadow, the Milky Way around it",
              color=MUTED, fontsize=12.5, style="italic", va="top")
     fig.text(0.07, 0.022,
-             "Color is bolometric intensity on a log scale over 6 decades "
+             "Color is bolometric intensity on a log scale over 8 decades "
              "(like EHT images), not true color. Spreading thin disk "
              "(Page–Thorne inside),\nprescribed sheared knots, gray slab "
              "transfer. Observer at $r = 150$ M. Sky: NASA SVS Deep Star "

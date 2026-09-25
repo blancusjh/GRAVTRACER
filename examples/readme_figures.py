@@ -65,12 +65,12 @@ def disk_figure():
     fig.text(0.07, 0.895, "Thin accretion disk seen at 84°: its far side is "
              "lensed over and under the shadow, the Milky Way around it",
              color=MUTED, fontsize=12.5, style="italic", va="top")
-    fig.text(0.07, 0.03,
+    fig.text(0.07, 0.022,
              "Color is bolometric intensity on a log scale over 6 decades "
              "(like EHT images), not true color. Spreading thin disk "
-             "(Page–Thorne inside), prescribed sheared knots, gray slab "
+             "(Page–Thorne inside),\nprescribed sheared knots, gray slab "
              "transfer. Observer at $r = 150$ M. Sky: NASA SVS Deep Star "
-             "Maps 2020.", color=MUTED, fontsize=9.5)
+             "Maps 2020.", color=MUTED, fontsize=9.5, linespacing=1.5)
     fig.savefig(IMAGES / "kerr_disk.png", dpi=185)
     plt.close(fig)
 

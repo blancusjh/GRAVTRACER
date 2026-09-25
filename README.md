@@ -8,15 +8,21 @@ geodesic core powers the Python package `grayt` and the `gravtracer` CLI.
 
 ![A lensed Page–Thorne disk around a spinning Kerr black hole](docs/images/kerr_disk.png)
 
-*Kerr black hole, spin 0.95, viewed at 76° from 400 M, in physical units: a
-10⁸ M☉ hole accreting at 10% of the Eddington rate. The disk is a
-viscously spreading thin disk (Page–Thorne inside, Lynden-Bell–Pringle edge):
-each part glows as a blackbody at its temperature, seen at the redshifted
-temperature g T, and the gas turns transparent as it cools, so it fades into
-the lensed Milky Way. The sky ([NASA SVS Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/))
-is calibrated to real surface brightness and sampled along each ray's
-direction at infinity. One global, monotonic tone curve maps it all, white
-balanced on the disk's light as an adapted eye or camera would be.*
+*Kerr black hole, spin 0.95, seen nearly edge-on (84°) from 150 M, the view
+of [NASA SVS 13326](https://svs.gsfc.nasa.gov/13326/). The far side of the
+thin disk is lensed over and under the shadow. The approaching side is
+Doppler boosted, and the Milky Way behind is lensed around the hole. Color is
+bolometric intensity on a log scale, as in EHT images, not true color. The
+disk is a viscously spreading thin disk (Page–Thorne inside) with prescribed
+sheared knots; the sky is [NASA SVS Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/),
+sampled along each ray's direction at infinity.*
+
+![The same accretion disk as a bolometric intensity map and in true blackbody color](docs/images/disk_color.png)
+
+*The same scene two ways. Total power is Doppler boosted as g⁴. The visible
+light of gas at ~10⁵ K (a 10⁸ M☉ hole at 10% of Eddington, white balanced on
+the disk) is nearly white, and its Doppler contrast is far weaker. `grayt.photometry`
+renders the true-color version.*
 
 ## Install
 
@@ -77,20 +83,19 @@ gravtracer render configs/celestial_kerr.yml -o celestial.png --npz
 ![Gallery of GRAVTRACER black holes, stars, and other stationary models](docs/images/model_gallery.png)
 
 *Kerr holes arranged by spin and inclination, beside stellar, charged, and
-Zipoy–Voorhees exteriors, all rendered with the same physical photometry and
-one fixed tone curve, so brightness compares across panels. Every observer
-looks toward the Milky Way's core, so the bending of light shows in the
-distorted star field and its Einstein ring.*
+Zipoy–Voorhees exteriors, all on one fixed log intensity scale, so brightness
+compares across panels. Every observer looks toward the Milky Way's core, so
+the bending of light shows in the distorted star field and its Einstein ring.*
 
 ![Views from all around a Kerr black hole while hot spots in its disk wind into spirals](docs/animations/kerr_orbit.gif)
 
-*Kerr black hole, spin 0.9, seen by stationary observers at r = 400 M placed
+*Kerr black hole, spin 0.9, seen by stationary observers at r = 150 M placed
 all around it ([MP4](docs/animations/kerr_orbit.mp4)); each frame is one
 observer at a later coordinate time, not a single moving camera. The view
 starts over sparse sky, then the Milky Way sweeps in behind the hole and is
-lensed around it. Photometry as above; the disk carries a weak, prescribed
-hot-spot pattern advected with the Keplerian flow, with light-travel delays.
-Made with `python examples/kerr_movie.py`.*
+lensed around it. Knots in the disk are sheared by the Keplerian flow, with
+light-travel delays; they are prescribed, not MHD. The color scale is the one
+used above. Made with `python examples/kerr_movie.py`.*
 
 ![A camera photographs an engraving behind a Kerr black hole through traced null geodesics](docs/images/image_formation_scene.png)
 

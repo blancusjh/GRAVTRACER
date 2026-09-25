@@ -8,15 +8,16 @@ single camera covering 360 degrees in this time would exceed light speed,
 and a physically moving camera would also see aberration.
 The disk is a viscously spreading thin disk (grayt.spreading_disk):
 Page-Thorne inside, with the Lynden-Bell & Pringle outer taper, opaque
-where optically thick and fading into transparency as it cools. Colors and
-brightness are physical (grayt.photometry): a 1e8 solar-mass hole at 10%
-of Eddington, blackbody emission seen at g T, and a calibrated sky, with
-one fixed global tone curve for every frame.
+where optically thick and fading into transparency as it cools, with gray
+slab transfer at every crossing. Color is bolometric intensity (g^4
+boosted) on one fixed log scale for every frame, as in EHT images and
+NASA SVS 13326; it is not true color (see examples/readme_figures.py).
 
-To make the rotation visible, the disk carries hot spots whose brightness
-pattern is advected with the Keplerian angular velocity of the same
-circular-geodesic flow that sets the Doppler shifts. Differential rotation
-shears them into spiral arcs. This is a prescribed pattern, not MHD.
+To make the rotation visible, the disk carries knots of enhanced
+dissipation advected with the Keplerian angular velocity of the same
+circular-geodesic flow that sets the Doppler shifts (examples/
+_disk_texture.py). Differential rotation shears them into arcs. This is
+a prescribed pattern, not MHD.
 Emission times include the light travel time along each ray, and the
 sky is sampled along each ray's asymptotic direction.
 
@@ -44,8 +45,9 @@ from grayt import style
 from grayt.animation import VideoWriter, display_frame
 
 SPIN = 0.9
-R_C = 8.0               # spreading-disk scale radius [M]
-PHOTOMETRY = dict(mass_msun=1e8, eddington_ratio=0.1)
+R_C, TAU_C = 5.0, 1e3   # spreading-disk scale radius [M], tau_perp(r_c)
+DECADES = 6.0           # log color scale spanning the whole opaque disk
+SKY_GAIN = 1.4          # display brightening of the (uncalibrated) star map
 # The Milky Way's core lies behind the hole for a camera at phi = 90 deg.
 # Start 120 deg earlier, over sparse sky, so the band sweeps in behind the
 # hole about a third of the way through and is seen deforming as it enters.
@@ -54,34 +56,9 @@ PHI_SLOWEST = 90.0      # the orbit eases to its slowest speed here
 EASE = 0.65             # speed there is (1 - EASE) of the mean
 
 
-def hot_spot_disk(bh, n_spots=9, seed=3):
-    """Spreading disk whose flux carries an advected hot-spot pattern."""
-    base = grayt.PageThorneDisk(bh, r_out=15 * R_C)
-    rng = np.random.default_rng(seed)
-    radii = rng.uniform(bh.isco + 1.0, 16.0, n_spots)
-    phases = rng.uniform(0, 2 * np.pi, n_spots)
-    amplitude = rng.uniform(0.8, 1.8, n_spots)
-
-    def intensity(r, phi, t):
-        omega = 1.0 / (r**1.5 + bh.a)          # prograde Kerr Keplerian
-        pattern = np.zeros(np.shape(r))
-        for rk, pk, ak in zip(radii, phases, amplitude):
-            radial = np.exp(-(((r - rk) / (0.12 * rk + 0.4)) ** 2))
-            angular = np.exp(4.0 * (np.cos(phi - pk - omega * t) - 1.0))
-            pattern += ak * radial * angular
-        return base.intensity(r, phi, t) * (1.0 + pattern)
-
-    spots = grayt.EmittingDisk(
-        base.r_in, base.r_out, intensity,
-        name="Page-Thorne x hot spots advected with Keplerian Omega(r)",
-        provenance={"spots": n_spots, "seed": seed,
-                    "note": "prescribed brightness pattern; not MHD"})
-    return grayt.spreading_disk(bh, r_c=R_C, base=spots)
-
-
 def cameras(frames, resolution):
-    camera = grayt.Camera(r=400.0, theta=72.0, phi=90.0, x=(-160.0, 160.0),
-                          y=(-100.0, 100.0), resolution=resolution)
+    camera = grayt.Camera(r=150.0, theta=72.0, phi=90.0, x=(-40.0, 40.0),
+                          y=(-25.0, 25.0), resolution=resolution)
     u0 = (PHI_SLOWEST - PHI_START) / 360.0
     for k in range(frames):
         u = k / frames
@@ -100,8 +77,8 @@ def caption(frame, camera, t, font, small):
     ink, muted = (236, 230, 218), (154, 149, 140)
     draw.text((0.03 * w, 0.035 * h), "Kerr black hole, a = 0.9", fill=ink,
               font=font)
-    lines = ("thin disk in blackbody colours, M = 1e8 solar masses, 0.1 L_Edd",
-             "stationary observers at r = 400 M, one per frame")
+    lines = ("color: bolometric intensity, log scale; sheared knots (prescribed)",
+             "stationary observers at r = 150 M, one per frame")
     for n, line in enumerate(lines):
         draw.text((0.03 * w, 0.035 * h + 1.35 * font.size
                    + n * 1.3 * small.size), line, fill=muted, font=small)
@@ -128,10 +105,13 @@ def main():
     args = ap.parse_args()
 
     bh = grayt.BlackHole(SPIN)
-    disk = hot_spot_disk(bh)
-    sky = grayt.CelestialSky.nasa_starmap()
-    photometry = grayt.photometry.Photometry(spin=SPIN, **PHOTOMETRY)
-    levels = None           # fixed from the first frame: no exposure flicker
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _disk_texture import turbulent_disk
+
+    disk = turbulent_disk(bh, r_c=R_C, tau_c=TAU_C)
+    sky = grayt.CelestialSky.nasa_starmap(gain=SKY_GAIN)
+    exposure = None         # fixed from the first frame: no flicker
     from matplotlib import font_manager
     face = font_manager.findfont(font_manager.FontProperties(family=style.SERIF))
     font = ImageFont.truetype(face, max(12, args.res[1] // 18))
@@ -143,11 +123,13 @@ def main():
             traced = replace(camera, resolution=tuple(n * args.ss
                                                       for n in args.res))
             t = k * args.dt
-            image = grayt.render_scene(bh, traced, disk, sky=sky,
-                                       photometry=photometry, levels=levels,
-                                       observer_time=t,
-                                       escape_radius=800.0)
-            levels = levels or image.meta["display"]
+            image = grayt.render_scene(bh, traced, disk, observer_time=t,
+                                       escape_radius=300.0)
+            exposure = exposure or 1.0 / (0.5 * image.intensity.max())
+            image.rgb = grayt.sky.compose_rgb(
+                image.intensity, image.status, image.theta_inf,
+                image.phi_inf, sky, exposure=exposure, tone="log",
+                decades=DECADES, transmission=image.transmission)
             frame = caption(display_frame(image.rgb, args.ss), camera, t,
                             font, small)
             writer.write(frame)

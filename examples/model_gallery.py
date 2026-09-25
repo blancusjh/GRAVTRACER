@@ -154,16 +154,11 @@ The volume example imports prescribed gray radiation coefficients, not a GRMHD s
 
 
 INCLINATIONS = (20, 60, 84)
-# Physical photometry: every emitter radiates a blackbody at its effective
-# temperature for a 1e8 solar-mass hole at 10% of Eddington; the sky is
-# calibrated; one global tone curve (fixed levels) for every panel.
-MASS_MSUN, EDDINGTON = 1e8, 0.1
-R_C = 8.0          # spreading-disk scale radius [M]
-
-
-def photometry(spin=0.0):
-    return grayt.photometry.Photometry(MASS_MSUN, EDDINGTON, spin=spin)
-
+# Color is bolometric intensity on one fixed log scale for every panel
+# (like EHT images), spanning the whole opaque disk so none of it is shown
+# black. True-color photometry is shown separately in docs/images.
+R_C, TAU_C = 8.0, 1e3   # spreading-disk scale radius [M], tau_perp(r_c)
+DECADES = 6.0
 
 def models():
     cases = []
@@ -172,7 +167,7 @@ def models():
         st = grayt.BlackHole(spin)
         # Page-Thorne inside, Lynden-Bell & Pringle taper outside: opaque
         # where optically thick, fading as it cools; no edge.
-        disk = grayt.spreading_disk(st, r_c=R_C)
+        disk = grayt.spreading_disk(st, r_c=R_C, tau_c=TAU_C)
         for angle in angles:
             cases.append(
                 (
@@ -182,7 +177,7 @@ def models():
                     disk,
                     None,
                     angle,
-                    "Kerr / spreading thin disk, r_c=8 M / blackbody at g T / 1e8 Msun, 0.1 L_Edd",
+                    "Kerr / spreading thin disk, r_c=8 M / bolometric g^4 / log intensity scale",
                 )
             )
     star = grayt.SphericalStar(radius=5.0)
@@ -221,7 +216,7 @@ def models():
     )
     for charge in (0.5, 0.8):
         st = grayt.ReissnerNordstrom(charge)
-        disk = grayt.spreading_disk(st, r_c=12.0, base=grayt.EmittingDisk(
+        disk = grayt.spreading_disk(st, r_c=12.0, tau_c=TAU_C, base=grayt.EmittingDisk(
             6.0,
             180.0,
             lambda r, ph, t: 2e-4 * (6 / r) ** 3 * (1 - np.sqrt(6 / r)),
@@ -320,11 +315,10 @@ def plate(thumbnails, path):
     fig.text(left, 0.925, "Stationary spacetimes and the light they bend",
              color=style.INK, fontsize=26)
     fig.text(left, 0.03,
-             "Physical photometry: $10^8\\,M_\\odot$ at 0.1 $L_{\\rm Edd}$, blackbody "
-             "emission at $gT$; spreading thin disks (Page–Thorne inside). Stars and "
-             "charged holes: prescribed emission on the same scale. Sky: NASA SVS "
-             "Deep Star Maps 2020, calibrated and lensed. Observers at $r = 400$ M; "
-             "one fixed global tone curve.",
+             "Color: bolometric intensity on one log scale (6 decades) for all "
+             "panels, not true color. Spreading thin disks (Page–Thorne inside), "
+             "gray slab transfer. Stars and charged holes: prescribed emission. "
+             "Sky: NASA SVS Deep Star Maps 2020, lensed. Observers at $r = 400$ M.",
              color=style.MUTED, fontsize=10.5)
     fig.savefig(path, dpi=130)
     plt.close(fig)
@@ -445,7 +439,7 @@ def main():
     parser.add_argument("--skip-videos", action="store_true")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    sky = grayt.CelestialSky.nasa_starmap()
+    sky = grayt.CelestialSky.nasa_starmap(gain=1.4)
     plt.imsave(args.output / "celestial_map.png", sky.image)
     # phi=90 deg puts the Milky Way's core behind the hole, so the lensed
     # star field shows the curvature; the frame contains the Einstein ring.
@@ -461,13 +455,14 @@ def main():
         # four rays per displayed pixel (anti-aliasing near the photon ring).
         resolution=(192, 120) if args.quick else (1280, 800),
     )
-    # Fix the tone levels once, from the brightest Kerr case, so panels
+    # One exposure for all panels, from the brightest Kerr case, so panels
     # compare brightness physically.
     ref = grayt.BlackHole(0.95)
-    levels = grayt.render_scene(
+    peak = grayt.render_scene(
         ref, replace(camera, theta=60, resolution=(320, 200)),
-        grayt.spreading_disk(ref, r_c=R_C), sky=sky,
-        photometry=photometry(0.95), escape_radius=800).meta["display"]
+        grayt.spreading_disk(ref, r_c=R_C, tau_c=TAU_C),
+        escape_radius=800).intensity.max()
+    exposure = 1.0 / (0.5 * peak)
     records = []
     thumbnails = []
     for slug, title, st, disk, surface, theta, note in models():
@@ -478,8 +473,9 @@ def main():
             disk,
             surface=surface,
             sky=sky,
-            photometry=photometry(getattr(st, "a", 0.0)),
-            levels=levels,
+            exposure=exposure,
+            tone="log",
+            decades=DECADES,
             rtol=2e-9,
             atol=2e-11,
             escape_radius=800,
@@ -508,7 +504,7 @@ def main():
             (
                 "kerr_camera_orbit",
                 grayt.BlackHole(0.8),
-                grayt.spreading_disk(grayt.BlackHole(0.8), r_c=R_C),
+                grayt.spreading_disk(grayt.BlackHole(0.8), r_c=R_C, tau_c=TAU_C),
                 None,
             ),
             ("stellar_camera_orbit", grayt.SphericalStar(5), None, next(m[4] for m in models() if m[0] == "star_spots")),
@@ -522,8 +518,9 @@ def main():
                 disk=disk,
                 surface=surface,
                 sky=sky,
-                photometry=photometry(0.8),
-                levels=levels,
+                exposure=exposure,
+                tone="log",
+                decades=DECADES,
                 archive_every=max(1, frames // 4),
                 coordinate_time_step=1 / 24,
                 rtol=1e-8,

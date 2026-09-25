@@ -26,40 +26,83 @@ BG, INK, MUTED = style.BG, style.INK, style.MUTED
 style.use()
 
 
-def disk_figure():
+# Close, nearly edge-on view (as in NASA SVS 13326): the lensed far side of
+# the disk arches over and under the shadow. Observer at 150 M, disk scale
+# radius 5 M so the observer stays well outside the glowing disk.
+CLOSE = dict(r=150, theta=84, phi=90, x=(-40, 40), y=(-25, 25))
+EXPOSURE = 25.0      # white at I = 0.04 (half the peak for a = 0.95)
+DECADES = 6.0        # spans the whole opaque disk, so none of it shows black
+
+
+def close_scene(resolution):
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _disk_texture import turbulent_disk
+
     spacetime = grayt.BlackHole(a=0.95)
-    camera = grayt.Camera(
-        r=400, theta=76, phi=90, x=(-160, 160), y=(-100, 100),
-        resolution=(2240, 1400)
-    )
-    # Page-Thorne inside, Lynden-Bell & Pringle taper outside; physical
-    # photometry: blackbody emission at g T for 1e8 Msun at 0.1 L_Edd.
-    disk = grayt.spreading_disk(spacetime, r_c=8.0)
-    image = grayt.render_scene(
-        spacetime,
-        camera,
-        disk,
-        sky=grayt.CelestialSky.nasa_starmap(),
-        photometry=grayt.photometry.Photometry(1e8, 0.1, spin=0.95),
-        escape_radius=800,
-        rtol=2e-9,
-        atol=2e-11,
-    )
+    disk = turbulent_disk(spacetime, r_c=5.0, tau_c=1e3)
+    camera = grayt.Camera(resolution=resolution, **CLOSE)
+    image = grayt.render_scene(spacetime, camera, disk, escape_radius=300,
+                               rtol=2e-9, atol=2e-11)
+    return spacetime, image
+
+
+def disk_figure():
+    _, image = close_scene((2240, 1400))
+    sky = grayt.CelestialSky.nasa_starmap(gain=1.4)
+    rgb = grayt.sky.compose_rgb(
+        image.intensity, image.status, image.theta_inf, image.phi_inf, sky,
+        exposure=EXPOSURE, tone="log", decades=DECADES,
+        transmission=image.transmission)
     fig = plt.figure(figsize=(12.8, 8.4))
     ax = fig.add_axes((0.07, 0.11, 0.88, 0.75))
-    ax.imshow(image.rgb.transpose(1, 0, 2), origin="lower", extent=image.extent)
+    ax.imshow(rgb.transpose(1, 0, 2), origin="lower", extent=image.extent)
     ax.set(xlabel="image-plane $x$ / M", ylabel="image-plane $y$ / M")
     style.frame(ax)
     fig.text(0.07, 0.945, "Kerr black hole, $a = 0.95$", color=INK,
              fontsize=21, va="top")
-    fig.text(0.07, 0.895, "Thin accretion disk at 76° inclination in true "
-             "blackbody colors (scene white balance), with the Milky Way lensed around it",
+    fig.text(0.07, 0.895, "Thin accretion disk seen at 84°: its far side is "
+             "lensed over and under the shadow, the Milky Way around it",
              color=MUTED, fontsize=12.5, style="italic", va="top")
-    fig.text(0.07, 0.03, "$10^8\\,M_\\odot$ at 0.1 $L_{\\rm Edd}$; spreading thin disk "
-             "(Page–Thorne inside, $r_c = 8$ M), blackbody at $gT$; calibrated sky "
-             "(NASA SVS Deep Star Maps 2020). Observer at $r = 400$ M; one global "
-             "monotonic tone curve; white balanced on the disk light.", color=MUTED, fontsize=9.5)
+    fig.text(0.07, 0.03,
+             "Color is bolometric intensity on a log scale over 6 decades "
+             "(like EHT images), not true color. Spreading thin disk "
+             "(Page–Thorne inside), prescribed sheared knots, gray slab "
+             "transfer. Observer at $r = 150$ M. Sky: NASA SVS Deep Star "
+             "Maps 2020.", color=MUTED, fontsize=9.5)
     fig.savefig(IMAGES / "kerr_disk.png", dpi=185)
+    plt.close(fig)
+
+
+def color_figure():
+    """The same view as an intensity map and in true (blackbody) color."""
+    spacetime, image = close_scene((1120, 700))
+    intensity = grayt.sky.compose_rgb(
+        image.intensity, image.status, image.theta_inf, image.phi_inf,
+        grayt.CelestialSky.nasa_starmap(gain=1.4), exposure=EXPOSURE,
+        tone="log", decades=DECADES, transmission=image.transmission)
+    photometry = grayt.photometry.Photometry(1e8, 0.1, spin=spacetime.a)
+    _, true_color, _ = grayt.photometry.photometric_render(
+        image, photometry, grayt.CelestialSky.nasa_starmap())
+    fig = plt.figure(figsize=(14, 5.6))
+    for k, (rgb, title) in enumerate((
+            (intensity, "Bolometric intensity, log scale"),
+            (true_color, "True color, $10^8\\,M_\\odot$ at 0.1 $L_{\\rm Edd}$"))):
+        ax = fig.add_axes((0.02 + 0.49 * k, 0.12, 0.47, 0.72))
+        ax.imshow(rgb.transpose(1, 0, 2), origin="lower", extent=image.extent)
+        ax.set_xticks([]); ax.set_yticks([])
+        style.frame(ax)
+        ax.set_title(title, fontsize=13)
+    fig.text(0.02, 0.93, "What color is an accretion disk?", color=INK,
+             fontsize=19)
+    fig.text(0.02, 0.04,
+             "Left: total emitted power, Doppler boosted as $g^4$, so the "
+             "approaching side is far brighter. Right: the visible light of "
+             "blackbody gas at $gT$ ($\\sim 10^5$ K), white balanced on the "
+             "disk; in the optical the boost scales only as $\\sim g$.",
+             color=MUTED, fontsize=10)
+    fig.savefig(IMAGES / "disk_color.png", dpi=170)
     plt.close(fig)
 
 
@@ -149,11 +192,12 @@ def scene_figure():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--only", choices=("disk", "rays", "scene"),
+    parser.add_argument("--only", choices=("disk", "color", "rays", "scene"),
                         help="regenerate one figure")
     args = parser.parse_args()
     IMAGES.mkdir(parents=True, exist_ok=True)
-    jobs = {"disk": disk_figure, "rays": rays_figure, "scene": scene_figure}
+    jobs = {"disk": disk_figure, "color": color_figure, "rays": rays_figure,
+            "scene": scene_figure}
     for name, job in jobs.items():
         if args.only is None or name == args.only:
             print(f"Rendering {name}...", flush=True)

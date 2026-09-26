@@ -108,6 +108,42 @@ class TestBackendAPI:
         with pytest.raises(ValueError, match="does not match"):
             renderer.render(wrong)
 
+    def test_azimuth_reuse_matches_independent_trace_and_keeps_maps_owned(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            renderer = gpu.Renderer(grayt.BlackHole(a=0.5), resolution=CAM.resolution)
+            fresh = gpu.Renderer(grayt.BlackHole(a=0.5), resolution=CAM.resolution)
+        first = renderer.render(CAM)
+        second_camera = dataclasses.replace(CAM, phi=12.0)
+        cached = renderer.render(second_camera)
+        traced = fresh.render(second_camera)
+        assert cached.meta["azimuth_reused"] is True
+        assert traced.meta["azimuth_reused"] is False
+        assert np.array_equal(cached.status, traced.status)
+        escaped = cached.status == 0
+        tol = 1e-8 if _fp64() else 1e-2
+        # Compare angles on the circle, including endpoints that cross 2*pi.
+        assert np.abs(np.angle(np.exp(1j * (
+            cached.phi_inf[escaped] - traced.phi_inf[escaped]
+        )))).max() < tol
+        assert np.array_equal(cached.intensity, first.intensity)
+        cached.status[:] = 3
+        cached.phi_inf[:] = 0
+        repeated = renderer.render(second_camera)
+        assert np.array_equal(repeated.status, first.status)
+        assert np.allclose(repeated.phi_inf[escaped], traced.phi_inf[escaped], atol=tol)
+
+    @pytest.mark.parametrize("change", [
+        {"theta": 70.0}, {"r": 900.0}, {"x": (-10, 10)}, {"y": (-10, 10)},
+    ])
+    def test_geometry_changes_invalidate_azimuth_cache(self, change):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            renderer = gpu.Renderer(grayt.BlackHole(a=0.5), resolution=CAM.resolution)
+        renderer.render(CAM)
+        image = renderer.render(dataclasses.replace(CAM, **change))
+        assert image.meta["azimuth_reused"] is False
+
     def test_rejects_non_dp45(self):
         with pytest.raises(ValueError, match="rkdp45"):
             grayt.render(grayt.BlackHole(a=0.5), CAM, backend="gpu",

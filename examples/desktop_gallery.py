@@ -1,12 +1,8 @@
-"""Open a native viewer for one allowlisted gallery example.
-
-The macOS URL launcher passes gravtracer://view/<preset> here. URLs cannot
-supply code, paths, shell options, or arbitrary renderer parameters.
-"""
+"""Open a gallery model in the native, live 3D observer viewer."""
 
 import argparse
-from urllib.parse import urlsplit
 
+import _common  # select a locally built or installed grayt
 import grayt
 from model_gallery import models
 
@@ -41,23 +37,10 @@ def replace_case(case, name):
     return (name, *case[1:5], 45, case[6])
 
 
-def parse_url(url, allowed):
-    parsed = urlsplit(url)
-    name = parsed.path.removeprefix("/")
-    if (
-        parsed.scheme != "gravtracer"
-        or parsed.netloc != "view"
-        or parsed.query
-        or parsed.fragment
-        or name not in allowed
-    ):
-        raise ValueError("unknown GRAVTRACER viewer link")
-    return name
-
-
 def open_example(name):
     _, _, st, disk, surface, inclination, _ = presets()[name]
-    cpu = st.mid not in (1, 2) or surface is not None
+    cpu = (st.mid not in (1, 2) or surface is not None or
+           (disk is not None and not isinstance(disk, (grayt.ThinDisk, grayt.PageThorneDisk))))
     camera = grayt.Camera(
         r=100,
         theta=inclination,
@@ -85,20 +68,17 @@ def open_example(name):
     return viewer.run()
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--url")
-    group.add_argument("--model")
-    args = parser.parse_args()
-    allowed = presets()
-    try:
-        name = parse_url(args.url, allowed) if args.url else args.model
-        if name not in allowed:
-            raise ValueError("unknown gallery example")
-    except ValueError as error:
-        parser.error(str(error))
-    open_example(name)
+    group.add_argument("--list", action="store_true", help="list available native scenes")
+    group.add_argument("--model", choices=sorted(presets()))
+    args = parser.parse_args(argv)
+    if args.list:
+        for name, row in presets().items():
+            print(f"{name}: {row[1]}")
+    else:
+        open_example(args.model)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import grayt
-from grayt.viewer import CameraState, compose_frame
+from grayt.viewer import CameraState, compose_frame, _hot
 
 
 def _maps():
@@ -112,6 +112,76 @@ def test_compose_frame_rejects_unknown_mode():
         compose_frame(_maps(), "infrared")
 
 
+def test_palette_matches_reference_afmhot():
+    import matplotlib
+
+    values = np.linspace(0, 1, 256)
+    assert np.allclose(_hot(values), matplotlib.colormaps["afmhot"](values)[:, :3])
+
+
+def test_fixed_normalization_survives_missing_preview_peak():
+    full = _maps()
+    preview = _maps()
+    preview.intensity[preview.intensity == 1] = 0.5
+    reference = compose_frame(full, "intensity", norm_to=1.0)
+    coarse = compose_frame(preview, "intensity", norm_to=1.0)
+    unchanged = (full.intensity == preview.intensity).T
+    assert np.array_equal(reference[unchanged], coarse[unchanged])
+
+
+def test_brightness_changes_display_without_changing_raw_intensity():
+    image = _maps()
+    saved = image.intensity.copy()
+    normal = compose_frame(image, "intensity", norm_to=1.0)
+    bright = compose_frame(image, "intensity", norm_to=1.0, brightness=2)
+    assert (bright >= normal).all()
+    assert (bright > normal).any()
+    assert np.array_equal(saved, image.intensity)
+
+
+@pytest.mark.parametrize("value", [0, -1, np.nan, np.inf])
+def test_invalid_display_brightness_rejected(value):
+    with pytest.raises(ValueError, match="brightness"):
+        compose_frame(_maps(), brightness=value)
+
+
+def test_drag_events_coalesce_and_release_refines_latest_camera():
+    from types import SimpleNamespace
+    from grayt.viewer import InteractiveViewer
+
+    class Timer:
+        running = False
+        starts = 0
+
+        def start(self):
+            self.running = True
+            self.starts += 1
+
+        def stop(self):
+            self.running = False
+
+    viewer = InteractiveViewer.__new__(InteractiveViewer)
+    viewer.state = CameraState(grayt.Camera(theta=85, phi=0))
+    viewer._drag_pos = np.array([0, 0])
+    viewer._preview_timer = Timer()
+    viewer._refine_timer = Timer()
+    renders = []
+    viewer.render = lambda refine: renders.append((viewer.state.camera, refine))
+    for i in range(1, 21):
+        viewer._on_mouse_move(SimpleNamespace(pos=(i, -i), handled=False))
+    assert not renders
+    assert viewer._preview_timer.starts == 1
+    viewer._on_preview_timer(None)
+    assert len(renders) == 1
+    assert renders[0][0].theta == 80
+    assert renders[0][0].phi == 355
+    assert renders[0][1] is False
+    viewer._on_mouse_release(SimpleNamespace(button=1, handled=False))
+    assert renders[-1][1] is True
+    assert not viewer._preview_timer.running
+    assert not viewer._refine_timer.running
+
+
 def test_view_cli_builds_scene_without_importing_matplotlib(monkeypatch):
     from grayt import cli
 
@@ -161,3 +231,19 @@ def test_view_cli_defaults_to_physical_intensity(monkeypatch):
     monkeypatch.setattr(grayt, "view", fake_view)
     assert cli._main(("view", "--res", "32", "16", "--preview-res", "16", "8")) == 0
     assert called["mode"] == "intensity"
+
+
+def test_view_cli_quality_and_display_defaults(monkeypatch):
+    from grayt import cli
+
+    called = {}
+
+    def fake_view(_spacetime, _disk, camera, **kwargs):
+        called.update(camera=camera, **kwargs)
+
+    monkeypatch.setattr(grayt, "view", fake_view)
+    assert cli._main(("view", "--brightness", "2", "--norm", "0.01")) == 0
+    assert called["camera"].resolution == (1024, 512)
+    assert called["preview_resolution"] == (512, 256)
+    assert called["brightness"] == 2
+    assert called["norm_to"] == 0.01

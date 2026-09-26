@@ -349,10 +349,10 @@ coordinate singularity than error on escaped rays; inspect both separately.
 ## Gallery, videos, and CLI
 
 ```sh
-PYTHONPATH=python python examples/model_gallery.py --output output/stationary_models
+python examples/model_gallery.py --output output/stationary_models
 gravtracer render configs/celestial_kerr.yml -o output/celestial.png --npz
-PYTHONPATH=python python examples/validate_custom_metrics.py
-PYTHONPATH=python python examples/volume_snapshot.py --convergence-only
+python examples/validate_custom_metrics.py
+python examples/volume_snapshot.py --convergence-only
 ```
 
 The gallery generates 14 scientific panels, a comparison sheet, the bundled
@@ -369,79 +369,35 @@ fixed geodesics. That video is a coordinate embedding, not an observer's
 photograph. MP4 output requires `ffmpeg` on PATH. Camera sequences, rendering
 parameters and raw keyframes accompany the videos. `--quick` reduces image
 size and frame count; `--skip-videos` produces only stills.
-The generated `index.html` provides a local browser for all artifacts.
-
-The gallery supports native desktop windows and optional rendered browser views.
-
-For native desktop windows on macOS, first run
-`PYTHONPATH=python python examples/install_desktop_launcher.py` from the
-repository, using the environment containing the viewer dependencies.
-This registers `gravtracer://view/<preset>` with a local application in
-`output/GRAVTRACER Viewer.app`. Then regenerate the page using the command
-below. The gallery opens each selected example in a separate native window;
-the browser may ask to open the registered application. No server is needed.
-Re-run installation after moving the repository or Python environment.
-
-Native windows start on black. **B** cycles black, the same NASA celestial
-map used in the gallery, and the original colored diagnostic grid. Background
-changes recolor cached rays without retracing. Kerr Page–Thorne views use
-OpenCL geometry with Keplerian bolometric g^4 emission and the same escape
-sphere as the gallery. q-metric views also use OpenCL. Imported metric and
-stellar views use the CPU scene renderer, labeled in the gallery and window.
-With the launcher installed, the CPU browser preview is collapsed and only
-starts when expanded. Launch errors are logged in `output/desktop_viewer.log`.
+Open the comparison sheet and rendered figures directly, or load their NPZ
+archives in Python. For native interactive views, install the viewer extra:
 
 ```sh
-PYTHONPATH=python python examples/observer_gallery.py --output output/stationary_models
+uv pip install '.[viewer]'
+gravtracer view --gui-backend pyside6
+python examples/desktop_gallery.py --list
+python examples/desktop_gallery.py --model kerr_camera_orbit
 ```
 
-Drag the rendered disk/sky image to change the observer's inclination and
-azimuth; scroll to change the field of view. Model selection, sliders,
-automatic azimuth rotation, PNG export, keyboard controls, and display
-exposure are available. Each model card links to its observer view. The
-default is the Schwarzschild disk at 85 degrees. The viewer works directly
-from `file://`, with embedded JavaScript, sky texture, and flux tables, and
-does not need a running Python server, OpenCL, or an internet connection.
+Drag to orbit and scroll to zoom. **H** or **Settings** toggles the settings
+panel. Set the spin, observer position, field of view, disk parameters,
+background map, sky rotation, and brightness; **Apply** updates the view.
+**B** cycles black, the bundled NASA celestial map, and the diagnostic grid.
+Background changes repaint the cached rays. Kerr and q-metric scenes use
+OpenCL; imported metrics and stellar scenes use the CPU renderer.
 
-Web Workers integrate float64 Hamiltonian null geodesics with RKDP45 and
-dense event location. Preview/refined tolerances are 1e-6/1e-8 (absolute
-tolerance is 1/100 of relative tolerance). Kerr and q-metric expressions
-are generated from the existing OpenCL source by
-`examples/build_browser_metrics.py`; browser parity tests compare complete
-rays and bolometric emission against Fortran. RN and stellar exteriors use
-their analytic formulas in the browser. The Python reference renderer uses
-the imported metric tables for these examples. Arbitrary metric tables and
-volume radiation transfer remain Python workflows.
-
-At fixed observer radius, inclination and field of view, axial symmetry
-allows ray reuse: add the azimuth offset to endpoint phi and reevaluate the
-sky or surface pattern. Inclination and field-of-view changes retrace the
-rays; no viewpoint interpolation or image morphing is used. Refinement
-averages four subray display colors per output pixel. These browser images
-are visualizations; the gallery's NPZ archives retain the scientific maps.
-
-`examples/validate_observer_gallery.py` exercises the controls, PNG export,
-optional coordinate diagrams, and mobile layout with Playwright in offline
-mode. It writes screenshots and `observer_validation.json`. Install
-Playwright and its Chromium browser, or pass `--chrome /path/to/Chrome` to
-use an existing installation. The physics comparisons are in
-`tests/test_browser_observer.py` and require Node for JavaScript execution.
-
-In the browser observer the disk/sky edge is intentionally an occultation
-boundary: the example disk is an opaque, zero-thickness annulus cut off at
-r=20 M. Adjacent rays may terminate on the disk or reach the sky. The smooth
-axisymmetric disk does not reveal azimuthal camera motion through moving
-emission features, whereas background stars do move. Disk false colors and
-sky RGB have no common calibrated spectrum. For a gradual optical-depth
-transition, the Python renderer offers `SlabDisk` (above), which applies
-radiative transfer rather than blending background light through an
-opaque disk. `examples/kerr_movie.py` renders an opaque Page–Thorne disk with a
-pattern that turns with the flow.
+For supplementary 3D coordinate plots, run
+`python examples/rays3d.py --show`. These plots show a coordinate embedding;
+the native observer viewer renders the image seen by the camera.
+The dark/bright disk edge in the legacy thin-disk model is an occultation
+boundary: the disk is an opaque, zero-thickness annulus ending at r=20 M.
+The Python renderer also offers `SlabDisk` for finite optical depth and
+`examples/kerr_movie.py` for prescribed emission patterns moving with the flow.
 
 For a slower Kerr movie with reduced spatial aliasing:
 
 ```sh
-OMP_NUM_THREADS=8 PYTHONPATH=python python examples/refine_kerr_movie.py \
+OMP_NUM_THREADS=8 python examples/refine_kerr_movie.py \
   --output output/stationary_models --frames 360 --fps 30 --samples 2
 ```
 
@@ -452,24 +408,6 @@ Page–Thorne disk. Frame metadata and full subray keyframes accompany the
 movie. `render_movie(..., supersampling=2)` enables the same pixel filter
 for other models, with full retracing at every camera. RGB is averaged
 after display tone mapping; this is not a calibrated detector response.
-
-Add supplementary interactive coordinate diagrams with:
-
-```sh
-uv pip install '.[interactive]'
-PYTHONPATH=python python examples/interactive_gallery.py --output output/stationary_models
-```
-
-The ray viewer switches between five metrics and supports orbit, zoom, pan,
-reset, and layer visibility. A second viewer shows emissivity isosurfaces
-from `radiation_snapshot.npz` when that snapshot is present. These are
-coordinate visualizations; the displayed vacuum rays continue through the
-reference disk plane. The HTML embeds Plotly and the plotted data, so opening
-`index.html` via `file://` works without a server or an internet connection.
-With an observer viewer present, the diagrams load when their disclosure
-is expanded. Rebuilding the gallery index preserves both interactive sections.
-The plotted datasets are also exported as `geodesic-view.json` and
-`volume-view.json`.
 
 ```python
 cameras = grayt.orbit_cameras(camera, frames=96, inclination=(45,80))

@@ -58,10 +58,10 @@ def _main(argv=None):
     p_view.add_argument("--fov", type=float, nargs=2, default=(24.0, 12.0),
                         metavar=("X", "Y"),
                         help="image-plane half-width and half-height in M")
-    p_view.add_argument("--res", type=int, nargs=2, default=(512, 256),
+    p_view.add_argument("--res", type=int, nargs=2, default=(1024, 512),
                         metavar=("NX", "NY"), help="final resolution")
     p_view.add_argument("--preview-res", type=int, nargs=2,
-                        default=(128, 64), metavar=("NX", "NY"),
+                        default=(512, 256), metavar=("NX", "NY"),
                         help="resolution used while interacting")
     p_view.add_argument("--disk-out", type=float, default=20.0,
                         help="outer disk radius in M")
@@ -77,10 +77,14 @@ def _main(argv=None):
     p_view.add_argument("--device", type=int, default=None,
                         help="OpenCL device index (see grayt.gpu.devices())")
     p_view.add_argument("--gui-backend", default=None,
-                        help="VisPy GUI backend (default: auto; pyside6 recommended)")
+                        help="VisPy GUI backend (default: pyside6, includes settings panel)")
     p_view.add_argument("--background", choices=("black", "celestial", "grid"), default="black",
                         help="initial background; B cycles black, celestial, grid")
     p_view.add_argument("--sky", help="optional equirectangular celestial map image")
+    p_view.add_argument("--brightness", type=float, default=1.0,
+                        help="display gain (also adjustable with + / -); raw intensity is unchanged")
+    p_view.add_argument("--norm", type=float, default=None,
+                        help="intensity mapped to white at brightness=1 (default: initial image maximum)")
 
     args = parser.parse_args(argv)
 
@@ -139,7 +143,8 @@ def _main(argv=None):
         sky = CelestialSky(args.sky) if args.sky else None
         view(bh, disk, cam, preview_resolution=tuple(args.preview_res),
              mode=args.mode, precision=args.precision, device=args.device,
-             backend=args.gui_backend, background=args.background, sky=sky)
+             backend=args.gui_backend, background=args.background, sky=sky,
+             norm_to=args.norm, brightness=args.brightness)
         return 0
 
     print(f"wrote {args.output} in {time.time() - t0:.1f}s", file=sys.stderr)

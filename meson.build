@@ -8,7 +8,7 @@ project(
 
 py = import('python').find_installation(pure: false)
 py_dep = py.dependency()
-omp = dependency('openmp')
+omp = dependency('openmp', language: 'fortran')
 
 incdir_numpy = run_command(
   py, ['-c', 'import numpy; print(numpy.get_include())'],
@@ -48,11 +48,23 @@ core_module = custom_target(
   ],
 )
 
+# Keep Fortran's OpenMP compile flags off the C f2py wrappers: Apple's C
+# compiler does not accept gfortran's -fopenmp. Meson propagates the module
+# directories and runtime linkage through link_with.
+fortran_core = static_library(
+  'gravtracer_fortran',
+  fortran_sources,
+  dependencies: omp,
+  pic: true,
+)
+
 py.extension_module(
   '_core',
-  fortran_sources + [core_module, incdir_f2py / 'fortranobject.c'],
+  [core_module, incdir_f2py / 'fortranobject.c'],
   c_args: inc_np_args,
-  dependencies: [py_dep, omp],
+  dependencies: py_dep,
+  link_with: fortran_core,
+  link_language: 'fortran',
   install: true,
   subdir: 'grayt',
 )
@@ -81,20 +93,10 @@ py.install_sources(
     'python/grayt/spacetime.py',
     'python/grayt/system.py',
     'python/grayt/viewer.py',
+    'python/grayt/viewer_controls.py',
     'python/grayt/desktop_scene.py',
   ],
   subdir: 'grayt',
-)
-
-py.install_sources(
-  [
-    'python/grayt/web/metrics.js',
-    'python/grayt/web/geodesics.js',
-    'python/grayt/web/worker.js',
-    'python/grayt/web/observer.js',
-    'python/grayt/web/observer.css',
-  ],
-  subdir: 'grayt/web',
 )
 
 py.install_sources(

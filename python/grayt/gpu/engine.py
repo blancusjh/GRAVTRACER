@@ -247,6 +247,8 @@ class Renderer:
         self._kernel = cl.Kernel(
             self._eng.program(spacetime.mid, self.fp64), "render_slab")
         self._rows_per_slab = max(1, min(ny, 262_144 // max(nx, 1)))
+        self._camera_key = None
+        self._camera_phi = 0.0
 
     @property
     def device_name(self) -> str:
@@ -270,10 +272,17 @@ class Renderer:
         if not np.isfinite(r_esc) or r_esc <= camera.r:
             raise ValueError("escape radius must be finite and outside the camera")
 
+        # Both supported metrics and the disk are stationary and axisymmetric.
+        # At fixed radius/inclination/FOV, azimuth only translates escaped
+        # endpoints. Reuse the staging maps, still returning independent arrays.
+        key = (camera.r, camera.theta, tuple(camera.x), tuple(camera.y))
+        reused = key == self._camera_key
+
         # Row slabs keep each enqueue short (Apple/Windows GPU watchdogs
         # kill kernels that hog the device for seconds).  The camera x-axis
         # is reversed/negated to preserve GRAVTRACER's paper convention.
-        for row0 in range(0, ny, self._rows_per_slab):
+        row_starts = () if reused else range(0, ny, self._rows_per_slab)
+        for row0 in row_starts:
             nrows = min(self._rows_per_slab, ny - row0)
             self._kernel(
                 queue, ((nx*nrows + 63)//64*64,), None,
@@ -293,10 +302,13 @@ class Renderer:
                 self._d_real["herrm"], self._d_real["thf"],
                 self._d_real["phf"])
 
-        for name, buf in self._d_real.items():
-            cl.enqueue_copy(queue, self._host_real[name], buf)
-        cl.enqueue_copy(queue, self._host_status, self._d_status)
-        queue.finish()
+        if not reused:
+            for name, buf in self._d_real.items():
+                cl.enqueue_copy(queue, self._host_real[name], buf)
+            cl.enqueue_copy(queue, self._host_status, self._d_status)
+            queue.finish()
+            self._camera_key = key
+            self._camera_phi = camera.phi
 
         # Copy before returning: a later frame may reuse the host staging
         # arrays, while every returned Image remains an independent result.
@@ -307,6 +319,8 @@ class Renderer:
             np.flip(m, axis=0) for m in
             (host["intens"], host["gmap"], host["rhit"], host["herrm"],
              host["thf"], host["phf"], status))
+        if reused:
+            phf[status == 0] += np.deg2rad(camera.phi - self._camera_phi)
 
         meta = {
             "spacetime": dataclasses.asdict(self.spacetime),
@@ -316,6 +330,7 @@ class Renderer:
             "backend": "gpu", "device": self.device_name,
             "device_index": self.device_index, "precision": self.precision,
             "persistent_renderer": True,
+            "azimuth_reused": reused,
             "escape_radius": r_esc,
         }
         return Image(intensity=intens, g=gmap, r_hit=rhit,

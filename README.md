@@ -39,8 +39,7 @@ python -m pip install meson-python numpy ninja meson
 python -m pip install -e . --no-build-isolation
 ```
 
-Optional extras: `python -m pip install '.[viewer]'` for the OpenCL desktop
-viewer, or `python -m pip install '.[interactive]'` for browser gallery tools.
+Install `python -m pip install '.[viewer]'` for the native OpenCL desktop viewer.
 
 ## Quick start
 
@@ -65,6 +64,27 @@ with scene provenance. For a command-line render:
 ```sh
 gravtracer render configs/celestial_kerr.yml -o celestial.png --npz
 ```
+
+For a live desktop view, install the viewer extra and launch from the same
+Python environment:
+
+```sh
+uv pip install '.[viewer]'
+gravtracer view --gui-backend pyside6
+```
+
+Click **Settings** or press **H** to hide or show the parameter panel. Set
+spin, observer position, view size, disk radius and angular momentum, then
+click **Apply**. Choose a background image or the bundled NASA sky map and
+adjust its rotation and brightness in the same panel. Sky images use an
+equirectangular projection.
+
+Drag to orbit and scroll to zoom. Moving previews use 512×256 rays; idle
+images refine to 1024×512. Azimuth rotation reuses traced rays. **+ / −**
+adjust display brightness, **B** changes the background, and **R** resets
+the camera. To compare with the broad bright region in the first OSIRIS
+panel, use `gravtracer view --spin 0 --l0 2.8 --gui-backend pyside6`.
+See [viewer quality and paper comparisons](docs/viewer_quality.md) for details.
 
 ## What it supports
 

@@ -1,6 +1,6 @@
 """Generate a reproducible scientific gallery and actual camera-orbit videos.
 
-Run: PYTHONPATH=python python examples/model_gallery.py --output output/models
+Run: python examples/model_gallery.py --output output/models
 Use --quick for a small smoke gallery; --skip-videos for stills only.
 All comparisons use M=1. The sky uses the bundled NASA SVS star map;
 colors are display mappings.
@@ -11,7 +11,6 @@ import argparse
 from dataclasses import replace
 from pathlib import Path
 import json
-import html
 import time
 
 import matplotlib
@@ -25,132 +24,6 @@ from grayt import style
 from grayt.animation import VideoWriter
 
 style.use()
-
-
-def build_index(output):
-    """Local, portable artifact browser; all assets remain relative files."""
-    output = Path(output)
-    interactive_path = output / "interactive_views.html"
-    interactive = (
-        interactive_path.read_text(encoding="utf-8")
-        if interactive_path.exists()
-        else ""
-    )
-    observer_path = output / "observer_view.html"
-    observer = (
-        observer_path.read_text(encoding="utf-8") if observer_path.exists() else ""
-    )
-    native = (output / "desktop_launcher.json").exists()
-    if native and observer:
-        observer = """<p>Use <strong>Open desktop viewer</strong> on an example to open its native window.
-Press <strong>B</strong> for black → celestial map → grid. The browser may ask to open GRAVTRACER Viewer.</p>
-<details id="browser-preview"><summary>Optional browser preview (CPU)</summary>
-<iframe title="CPU browser preview" style="width:100%;height:1300px;border:0"></iframe></details>
-<script>document.getElementById('browser-preview').addEventListener('toggle',function(){
-if(this.open&&!this.dataset.loaded){this.dataset.loaded='true';this.querySelector('iframe').src='observer_preview.html';}});</script>"""
-    if observer and interactive:
-        # Coordinate plots are supplementary. Load their WebGL runtime only
-        # when expanded, leaving the observer responsive on page startup.
-        coordinates = (
-            '<!doctype html><html lang="en"><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            "<style>body{margin:0;background:#000;color:#ece6da;font:17px/1.6 'STIX Two Text','Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif}"
-            ".interactive-plot{margin:18px 0;border-radius:4px;overflow:hidden}</style>"
-            + interactive
-            + "</html>"
-        )
-        payload = json.dumps(coordinates).replace("</", "<\\/")
-        interactive = (
-            '<details id="coordinate-diagrams"><summary>Coordinate diagrams and 3D emissivity</summary>'
-            '<div id="coordinate-host"></div></details>'
-            '<script id="coordinate-payload" type="application/json">'
-            + payload
-            + "</script>"
-            '<script>document.getElementById("coordinate-diagrams").addEventListener("toggle",function(){'
-            'if(!this.open||this.dataset.loaded)return;this.dataset.loaded="true";'
-            'const frame=document.createElement("iframe");frame.title="Coordinate diagrams";'
-            'frame.style="width:100%;height:1500px;border:0";'
-            'frame.srcdoc=JSON.parse(document.getElementById("coordinate-payload").textContent);'
-            'frame.addEventListener("load",()=>{frame.style.height=frame.contentDocument.documentElement.scrollHeight+"px";});'
-            'document.getElementById("coordinate-host").append(frame);});</script>'
-        )
-    records = json.loads((output / "manifest.json").read_text())
-    cards = []
-    for row in records:
-        name, title = row["name"], html.escape(row["title"])
-        cards.append(
-            f'<article><h2>{title}</h2><a href="{name}.png">'
-            f'<img loading="lazy" src="{name}.png" alt="{title}"></a>'
-            f'<p>{html.escape(row["note"])}</p><a href="{name}.npz">Raw ray and radiation maps</a>'
-            + (
-                f'<p><a class="desktop-launch" href="gravtracer://view/{name}">Open desktop viewer'
-                + (" (GPU)" if name.startswith(("kerr_", "quadrupole_")) else " (CPU)")
-                + "</a></p>"
-                if native
-                else ""
-            )
-            + (
-                f' · <a href="#observer-view" data-observer-name="{name}">Move observer</a>'
-                if observer and not native
-                else ""
-            )
-            + "</article>"
-        )
-    for movie in sorted(output.glob("*.mp4")):
-        title = html.escape(movie.stem.replace("_", " "))
-        cards.append(
-            f'<article><h2>{title}</h2><video controls loop preload="metadata" src="{movie.name}"></video>'
-            f'<p><a href="{movie.with_suffix(".json").name}">Parameters and camera sequence</a></p>'
-            + (
-                f'<p><a class="desktop-launch" href="gravtracer://view/{movie.stem}">Open desktop viewer</a></p>'
-                if native
-                and movie.stem
-                in (
-                    "kerr_camera_orbit",
-                    "stellar_camera_orbit",
-                    "quadrupole_camera_orbit",
-                )
-                else ""
-            )
-            + "</article>"
-        )
-    for name, title in [
-        ("volume_torus", "Prescribed 3D gray radiation field"),
-        ("metric_convergence", "Metric interpolation convergence"),
-    ]:
-        if (output / f"{name}.png").exists():
-            cards.append(
-                f'<article><h2>{title}</h2><img src="{name}.png" alt="{title}"></article>'
-            )
-    page = (
-        """<!doctype html><html lang="en"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GRAVTRACER — stationary models</title>
-<style>body{background:#000;color:#ece6da;font:17px/1.6 'STIX Two Text','Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif;margin:32px auto;max-width:1400px;padding:0 24px}
-h1{font-size:38px;font-weight:400}h2{font-size:20px;font-weight:400}a{color:#f2b85a}img,video{width:100%;height:auto;border-radius:2px}
-main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:24px}article{background:#0b0a09;border:1px solid #2a2826;padding:20px;border-radius:4px}
-p{color:#9a958c}.intro{max-width:960px;margin-bottom:32px}
-.interactive-section{margin:32px 0 48px}.interactive-section>h2{font-size:28px}
-.interactive-plot{background:#000;border:1px solid #2a2826;border-radius:4px;overflow:hidden;margin:18px 0}
-#coordinate-diagrams{margin:24px 0 40px}#coordinate-diagrams>summary{cursor:pointer;font-size:20px}
-.desktop-launch{display:inline-block;padding:8px 14px;background:#0d0c0b;border:1px solid #4a4640;border-radius:3px;text-decoration:none}
-#browser-preview{margin:24px 0}summary{cursor:pointer}
-</style>
-<h1>Stationary spacetimes and light</h1><div class="intro">
-<p>Kerr Page–Thorne disks, spherical stellar surfaces, and theoretical charged/quadrupolar comparisons.
-The sky uses NASA SVS Deep Star Maps; false colors use fixed exposure. All propagation is computed in the specified metric.</p>
-<p>Observer movies retrace moving camera positions. The 3D geodesic movie is a coordinate visualization.
-The volume example imports prescribed gray radiation coefficients, not a GRMHD solution.</p>
-<p><a href="gallery.png">Full comparison sheet</a> · <a href="manifest.json">Scientific manifest</a> ·
-<a href="celestial_map.png">Celestial map</a> · <a href="metric_convergence.json">Convergence measurements</a></p>
-</div>"""
-        + observer
-        + interactive
-        + "<main>"
-        + "\n".join(cards)
-        + "</main></html>\n"
-    )
-    (output / "index.html").write_text(page)
 
 
 INCLINATIONS = (20, 60, 84)
@@ -536,7 +409,6 @@ def main():
             )
         print("Rendering 3D trajectory movie", flush=True)
         ray_movie(args.output / "kerr_geodesics_3d.mp4", frames)
-    build_index(args.output)
     print(f"Artifacts: {args.output.resolve()}", flush=True)
 
 

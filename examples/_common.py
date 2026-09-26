@@ -7,7 +7,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT/"python"))
+if any((ROOT / "python/grayt").glob("_core*.so")) or any(
+    (ROOT / "python/grayt").glob("_core*.pyd")
+):
+    sys.path.insert(0, str(ROOT / "python"))
 
 OUTPUT = ROOT/"output"
 OUTPUT.mkdir(exist_ok=True)

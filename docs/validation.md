@@ -14,7 +14,7 @@ original Kerr and q-metric validation work:
 | Weak-field deflection (b = 50) | 4M/b + 15πM²/4b² to < 2% |
 | q-metric | q = 0 ≡ Schwarzschild to round-off; shadow scales with ADM mass 1+q |
 
-For imported metrics, radiation models, and browser comparisons, see the
+For imported metrics, radiation models, and native viewer comparisons, see the
 [scientific validation notes](custom_models.md#scientific-validation-and-archives).
 
 ## Errata in the OSIRIS paper as printed

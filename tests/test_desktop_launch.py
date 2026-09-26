@@ -1,4 +1,4 @@
-"""Native gallery links, allowlisted launches, and independent radiation."""
+"""Native Python gallery launches and independent radiation."""
 
 from pathlib import Path
 
@@ -7,34 +7,20 @@ import numpy as np
 import pytest
 
 
-@pytest.mark.parametrize(
-    "url",
-    [
-        "gravtracer://view/../../anything",
-        "gravtracer://view/kerr_a0_i85?command=anything",
-        "gravtracer://other/kerr_a0_i85",
-        "https://view/kerr_a0_i85",
-        "gravtracer://view/kerr_a0_i85#anything",
-        "gravtracer://view/unknown",
-    ],
-)
-def test_launcher_rejects_unrecognized_urls(monkeypatch, url):
+def test_gallery_presets_and_direct_python_launch(monkeypatch, capsys):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
-    from desktop_gallery import parse_url
-
-    with pytest.raises(ValueError):
-        parse_url(url, {"kerr_a0_i85"})
-
-
-def test_gallery_presets_are_launchable(monkeypatch):
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
-    from desktop_gallery import parse_url, presets
+    import desktop_gallery
     from model_gallery import models
 
-    available = presets()
-    for row in models():
-        assert parse_url("gravtracer://view/" + row[0], available) == row[0]
+    available = desktop_gallery.presets()
+    assert {row[0] for row in models()} <= available.keys()
     assert available["kerr_camera_orbit"][2].a == 0.8
+    desktop_gallery.main(["--list"])
+    assert "kerr_camera_orbit:" in capsys.readouterr().out
+    launched = []
+    monkeypatch.setattr(desktop_gallery, "open_example", launched.append)
+    desktop_gallery.main(["--model", "kerr_camera_orbit"])
+    assert launched == ["kerr_camera_orbit"]
 
 
 @pytest.mark.skipif(not grayt.gpu.available(), reason="OpenCL device required")

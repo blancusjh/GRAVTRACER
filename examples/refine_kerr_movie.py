@@ -21,7 +21,6 @@ import grayt
 import numpy as np
 from grayt.animation import display_frame
 from grayt.sky import compose_rgb
-from model_gallery import build_index
 from PIL import Image
 
 
@@ -149,7 +148,6 @@ def main():
         )
         + "\n"
     )
-    build_index(args.output)
     print(
         f"Saved {path}: {args.frames / args.fps:g}s, {args.samples**2} rays/pixel",
         flush=True,

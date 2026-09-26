@@ -7,6 +7,7 @@ when :func:`view` or :class:`InteractiveViewer` is used, so importing
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import time
 from dataclasses import dataclass, field
@@ -67,12 +68,12 @@ class CameraState:
 
 
 def _hot(values: np.ndarray) -> np.ndarray:
-    """Small dependency-free approximation to the ``afmhot`` color map."""
+    """Continuous ``afmhot`` map, matching the paper-style plotting palette."""
     return np.stack(
         (
-            np.clip(3.0 * values, 0.0, 1.0),
-            np.clip(3.0 * values - 1.0, 0.0, 1.0),
-            np.clip(3.0 * values - 2.0, 0.0, 1.0),
+            np.clip(2.0 * values, 0.0, 1.0),
+            np.clip(2.0 * values - 0.5, 0.0, 1.0),
+            np.clip(2.0 * values - 1.0, 0.0, 1.0),
         ),
         axis=-1,
     )
@@ -85,6 +86,8 @@ def compose_frame(
     background="black",
     sky=None,
     exposure=None,
+    norm_to=None,
+    brightness=1.0,
 ) -> np.ndarray:
     """Turn ray-tracing maps into an RGB ``(ny, nx, 3)`` display texture.
 
@@ -96,6 +99,10 @@ def compose_frame(
         raise ValueError(f"unknown viewer mode {mode!r}; use {', '.join(_MODES)}")
     if background not in _BACKGROUNDS:
         raise ValueError(f"unknown background {background!r}")
+    if not np.isfinite(brightness) or brightness <= 0:
+        raise ValueError("brightness must be finite and positive")
+    if norm_to is not None and (not np.isfinite(norm_to) or norm_to <= 0):
+        raise ValueError("norm_to must be finite and positive")
 
     status = image.status
     escaped = status == 0
@@ -138,9 +145,8 @@ def compose_frame(
     if mode in ("composite", "intensity") and np.any(disk):
         values = np.maximum(image.intensity, 0.0)
         if exposure is None:
-            positive = values[disk & (values > 0.0)]
-            scale = float(np.quantile(positive, 0.995)) if positive.size else 1.0
-            normalized = np.clip(values / (scale or 1.0), 0.0, 1.0)
+            scale = norm_to if norm_to is not None else float(values[disk].max())
+            normalized = np.clip(brightness * values / (scale or 1.0), 0.0, 1.0)
             rgb[disk] = _hot(normalized[disk])
     # Stellar surfaces have status=1; their positive intensity distinguishes
     # them from the dark absorbing boundary of a black hole.
@@ -149,7 +155,7 @@ def compose_frame(
 
         emitting = image.intensity > 0
         rgb[emitting] = matplotlib.colormaps["afmhot"](
-            -np.expm1(-exposure * image.intensity[emitting])
+            -np.expm1(-brightness * exposure * image.intensity[emitting])
         )[..., :3]
     rgb[status == 3] = (1, 0, 1)
 
@@ -165,7 +171,7 @@ def _load_vispy(backend: str | None):
             "the interactive viewer needs VisPy and PySide6; install gravtracer[viewer]"
         ) from exc
     try:
-        app.use_app(backend) if backend else app.use_app()
+        app.use_app(backend or "pyside6")
     except Exception as exc:  # pragma: no cover - environment dependent
         raise RuntimeError(
             "VisPy could not start a GUI backend; install "
@@ -182,7 +188,10 @@ class InteractiveViewer:
     renderer; release/idle refines at the final resolution.  Keys: ``R``
     reset, ``M`` cycle display mode, ``B`` cycle black/celestial/grid,
     ``Space`` refine, ``S`` save a PNG,
+    ``+``/``-`` adjust display brightness, ``H`` hide/show settings,
     and ``Escape`` close.
+    Azimuth-only motion reuses traced rays at full resolution. Other motion
+    requests are coalesced into previews, followed by refinement when idle.
     """
 
     def __init__(
@@ -190,7 +199,7 @@ class InteractiveViewer:
         spacetime: Spacetime,
         disk: ThinDisk | None = None,
         camera: Camera | None = None,
-        preview_resolution: tuple[int, int] = (128, 64),
+        preview_resolution: tuple[int, int] = (512, 256),
         mode: str = "intensity",
         precision: str = "auto",
         device: int | None = None,
@@ -203,6 +212,8 @@ class InteractiveViewer:
         surface=None,
         exposure=None,
         escape_radius=None,
+        norm_to: float | None = None,
+        brightness: float = 1.0,
         window_size: tuple[int, int] = (1100, 650),
     ):
         if mode not in _MODES:
@@ -210,8 +221,12 @@ class InteractiveViewer:
         if camera is None:
             camera = Camera()
 
-        from .gpu import Renderer
-
+        self._window = None
+        self._settings = None
+        self._disk_template = disk
+        self.surface = surface
+        self.escape_radius = escape_radius
+        self._auto_norm = norm_to is None
         self.spacetime = spacetime
         self.disk = disk
         self.state = CameraState(camera)
@@ -220,9 +235,19 @@ class InteractiveViewer:
             raise ValueError(f"unknown background {background!r}")
         self.background = background
         self.sky = sky
+        self._sky_longitude = getattr(sky, "longitude", 180.0)
+        self._sky_gain = getattr(sky, "gain", 1.0)
         self.exposure = exposure
-        self.preview_resolution = tuple(preview_resolution)
-        renderer_args = dict(
+        if not np.isfinite(brightness) or brightness <= 0:
+            raise ValueError("brightness must be finite and positive")
+        if norm_to is not None and (not np.isfinite(norm_to) or norm_to <= 0):
+            raise ValueError("norm_to must be finite and positive")
+        self.norm_to = norm_to
+        self.brightness = brightness
+        self.preview_resolution = tuple(
+            min(p, f) for p, f in zip(preview_resolution, camera.resolution)
+        )
+        self._renderer_options = dict(
             rtol=rtol,
             atol=atol,
             max_steps=max_steps,
@@ -230,25 +255,9 @@ class InteractiveViewer:
             precision=precision,
             device=device,
         )
-        from .emission import PageThorneDisk
-
-        if (
-            isinstance(disk, PageThorneDisk)
-            or spacetime.mid not in (1, 2)
-            or surface is not None
-        ):
-            from .desktop_scene import SceneRenderer
-
-            Renderer = SceneRenderer
-            renderer_args.update(surface=surface, escape_radius=escape_radius)
-            if self.exposure is None:
-                self.exposure = 5000
-        elif escape_radius is not None:
-            renderer_args["escape_radius"] = escape_radius
-        self.renderer = Renderer(spacetime, disk, camera.resolution, **renderer_args)
-        self.preview_renderer = Renderer(
-            spacetime, disk, self.preview_resolution, **renderer_args
-        )
+        self.renderer, self.preview_renderer = self._make_renderers(spacetime, disk, camera)
+        if self.exposure is None and self.renderer.__class__.__name__ == "SceneRenderer":
+            self.exposure = 5000
 
         self._app, scene = _load_vispy(backend)
         try:
@@ -271,11 +280,17 @@ class InteractiveViewer:
         self._visual = scene.visuals.Image(
             initial, interpolation="bilinear", parent=self._view.scene
         )
-        self._view.camera.set_range(x=(0, nx), y=(0, ny), margin=0)
+        from vispy.visuals.transforms import STTransform
+
+        self._visual.transform = STTransform()
 
         self._drag_pos = None
         self._last_image: Image | None = None
         self._last_frame = initial
+        self._last_render_camera = None
+        self._preview_timer = self._app.Timer(
+            interval=1 / 30, connect=self._on_preview_timer, start=False
+        )
         self._refine_timer = self._app.Timer(
             interval=0.15, connect=self._on_refine_timer, start=False
         )
@@ -284,44 +299,207 @@ class InteractiveViewer:
         self.canvas.events.mouse_release.connect(self._on_mouse_release)
         self.canvas.events.mouse_wheel.connect(self._on_mouse_wheel)
         self.canvas.events.key_press.connect(self._on_key_press)
+        self.canvas.events.close.connect(self._on_close)
 
+        if self._app.use_app().backend_name.lower() == "pyside6":
+            from .viewer_controls import ViewerWindow
+
+            self._window = ViewerWindow(self)
+            self._settings = self._window.controls
         self.render(refine=True)
+
+    def _make_renderers(self, spacetime, disk, camera):
+        from .gpu import Renderer
+
+        options = dict(self._renderer_options)
+        if (spacetime.mid not in (1, 2) or self.surface is not None or
+                (disk is not None and not isinstance(disk, ThinDisk))):
+            from .desktop_scene import SceneRenderer
+
+            Renderer = SceneRenderer
+            options.update(surface=self.surface, escape_radius=self.escape_radius)
+        elif self.escape_radius is not None:
+            options["escape_radius"] = self.escape_radius
+        renderer = Renderer(spacetime, disk, camera.resolution, **options)
+        preview = (renderer if self.preview_resolution == camera.resolution else
+                   Renderer(spacetime, disk, self.preview_resolution, **options))
+        return renderer, preview
+
+    def update_parameters(self, *, spin=None, q=None, disk_on=None, r_out=None,
+                          l0=None, radius=None, theta=None, phi=None, fov_x=None,
+                          fov_y=None, background=None, sky_path=None,
+                          sky_longitude=None, sky_gain=None, brightness=None):
+        """Apply native settings atomically; display-only changes reuse ray maps."""
+        from pathlib import Path
+        from .emission import PageThorneDisk
+        from .spacetime import BlackHole, QMetric
+        from .sky import CelestialSky
+
+        numeric = (spin, q, r_out, l0, radius, theta, phi, fov_x, fov_y,
+                   sky_longitude, sky_gain, brightness)
+        if any(value is not None and not np.isfinite(value) for value in numeric):
+            raise ValueError("Parameters must be finite")
+        spacetime = self.spacetime
+        if spin is not None:
+            if not isinstance(spacetime, BlackHole) or abs(spin) >= 1:
+                raise ValueError("Spin must be between -1 and 1 (nonextremal Kerr)")
+            spacetime = BlackHole(spin)
+        if q is not None:
+            if not isinstance(spacetime, QMetric):
+                raise ValueError("Quadrupole is only available for the q-metric")
+            spacetime = QMetric(q)
+        geometry_changed = spacetime != self.spacetime
+        template = self.disk or self._disk_template
+        supported = isinstance(spacetime, BlackHole) and (
+            template is None or isinstance(template, (ThinDisk, PageThorneDisk)))
+        if not supported and (disk_on is not None or r_out is not None or l0 is not None
+                              or (geometry_changed and template is not None)):
+            raise ValueError("This custom disk keeps its original physical parameters")
+        enabled = self.disk is not None if disk_on is None else disk_on
+        disk = self.disk
+        if supported:
+            if template is None and enabled:
+                template = ThinDisk()
+            if isinstance(template, PageThorneDisk):
+                outer = template.r_out if r_out is None else r_out
+                if geometry_changed or outer != template.r_out:
+                    template = PageThorneDisk(spacetime, r_out=outer,
+                                              n=template.provenance["flux_samples"])
+            elif isinstance(template, ThinDisk):
+                template = dataclasses.replace(template,
+                    r_out=template.r_out if r_out is None else r_out,
+                    l0=template.l0 if l0 is None else l0)
+                inner = template.r_in if template.r_in is not None else spacetime.isco
+                if template.r_out <= inner:
+                    raise ValueError("Disk outer radius must exceed its inner edge / ISCO")
+            disk = template if enabled else None
+        changed = geometry_changed or disk != self.disk
+        camera = self.state.camera
+        values = {name: value for name, value in
+                  (("r", radius), ("theta", theta), ("phi", phi)) if value is not None}
+        for axis, half in (("x", fov_x), ("y", fov_y)):
+            if half is not None:
+                if not 0.25 <= half <= 1000:
+                    raise ValueError("View half-size must be between 0.25 and 1000 M")
+                center = sum(getattr(camera, axis)) / 2
+                values[axis] = (center - half, center + half)
+        camera = dataclasses.replace(camera, **values)
+        if not _MIN_THETA <= camera.theta <= 180 - _MIN_THETA:
+            raise ValueError("Inclination must be between 3.2 and 176.8 degrees")
+        if camera.r <= spacetime.capture_radius:
+            raise ValueError("Observer must be outside the absorbing boundary")
+        if self.escape_radius is not None and camera.r >= self.escape_radius:
+            raise ValueError("Observer must be inside the escape sphere")
+        sky = copy.copy(self.sky)
+        if sky_path is not None:
+            sky = (CelestialSky(sky_path, name=Path(sky_path).name) if sky_path
+                   else CelestialSky.nasa_starmap())
+        background = self.background if background is None else background
+        longitude = (getattr(sky, "longitude", self._sky_longitude)
+                     if sky_longitude is None else sky_longitude)
+        gain = getattr(sky, "gain", self._sky_gain) if sky_gain is None else sky_gain
+        if gain <= 0:
+            raise ValueError("Background brightness must be positive")
+        if sky is None and background == "celestial":
+            sky = CelestialSky.nasa_starmap(longitude=longitude, gain=gain)
+        if sky is not None:
+            sky.longitude, sky.gain = longitude, gain
+        brightness = self.brightness if brightness is None else brightness
+        renderers = self._make_renderers(spacetime, disk, camera) if changed else (
+            self.renderer, self.preview_renderer)
+        started = time.perf_counter()
+        image = (self._last_image if not changed and camera == self._last_render_camera
+                 else renderers[0].render(camera))
+        norm = self.norm_to
+        if self._auto_norm and changed and self.exposure is None:
+            norm = float(image.intensity.max()) or 1.0
+        frame = compose_frame(image, self.mode, background=background, sky=sky,
+                              exposure=self.exposure, norm_to=norm, brightness=brightness)
+        # All validation, tracing, and file loading complete before changing state.
+        self._preview_timer.stop()
+        self._refine_timer.stop()
+        self.spacetime, self.disk, self._disk_template = spacetime, disk, template
+        self.state.camera = camera
+        self.renderer, self.preview_renderer = renderers
+        self.sky, self.background = sky, background
+        self._sky_longitude, self._sky_gain = longitude, gain
+        self.norm_to, self.brightness = norm, brightness
+        self._present(image, camera, frame, "settings", started)
+        return image
 
     def _title(self, elapsed: float, quality: str):
         cam = self.state.camera
+        parameter = (
+            f"a={self.spacetime.a:g}" if hasattr(self.spacetime, "a")
+            else f"q={self.spacetime.q:g}" if hasattr(self.spacetime, "q") else ""
+        )
+        ny, nx = self._last_frame.shape[:2]
         self.canvas.title = (
-            f"GRAVTRACER | theta={cam.theta:.1f} deg  phi={cam.phi:.1f} deg  "
-            f"{quality} {1000.0 * elapsed:.1f} ms | {self.renderer.device_name} | "
+            f"GRAVTRACER | {parameter} theta={cam.theta:.1f} deg  phi={cam.phi:.1f} deg  "
+            f"{quality} {nx}x{ny} {1000.0 * elapsed:.1f} ms | {self.renderer.device_name} | "
+            f"brightness={self.brightness:g} [+/-] | "
             f"background={self.background} [B]"
         )
+        if self._window is not None:
+            self._window.setWindowTitle(self.canvas.title)
+        if self._settings is not None:
+            self._settings.sync()
 
     def render(self, refine: bool = True) -> Image:
         """Render and display the current camera; return its map bundle."""
         renderer = self.renderer if refine else self.preview_renderer
+        # A full-quality cached image remains useful during azimuth-only motion.
+        # Do not downgrade it to a preview just because a drag is in progress.
+        previous = self._last_render_camera
+        current = self.state.camera
+        if (previous is not None and previous.resolution == self.renderer.resolution
+                and self._last_image.meta.get("backend") == "gpu"):
+            if dataclasses.replace(previous, phi=current.phi) == current:
+                renderer = self.renderer
         camera = self.state.at_resolution(renderer.resolution)
         t0 = time.perf_counter()
         image = renderer.render(camera)
+        if self.norm_to is None and self.exposure is None:
+            # Calibrate once from the initial refined image. Resampling a narrow
+            # Doppler peak must not change brightness on every preview frame.
+            self.norm_to = float(image.intensity.max()) or 1.0
         frame = self._compose(image)
+        quality = "cached" if image.meta.get("azimuth_reused") else (
+            "final" if renderer is self.renderer else "preview"
+        )
+        self._present(image, camera, frame, quality, t0)
+        return image
+
+    def _present(self, image, camera, frame, quality, started):
         self._visual.set_data(frame)
         ny, nx = frame.shape[:2]
-        self._view.camera.set_range(x=(0, nx), y=(0, ny), margin=0)
+        # Image-plane units preserve the projection through resolution changes.
+        self._visual.transform.scale = (
+            (camera.x[1] - camera.x[0]) / nx,
+            (camera.y[1] - camera.y[0]) / ny,
+        )
+        self._visual.transform.translate = (camera.x[0], camera.y[0])
+        self._view.camera.set_range(x=camera.x, y=camera.y, margin=0)
         self._last_image = image
         self._last_frame = frame
-        self._title(time.perf_counter() - t0, "final" if refine else "preview")
+        self._last_render_camera = camera
+        self._title(time.perf_counter() - started, quality)
         self.canvas.update()
-        return image
 
     def _compose(self, image):
         if self.background == "celestial" and self.sky is None:
             from .sky import CelestialSky
 
-            self.sky = CelestialSky.nasa_starmap()
+            self.sky = CelestialSky.nasa_starmap(
+                longitude=self._sky_longitude, gain=self._sky_gain)
         return compose_frame(
             image,
             self.mode,
             background=self.background,
             sky=self.sky,
             exposure=self.exposure,
+            norm_to=self.norm_to,
+            brightness=self.brightness,
         )
 
     def cycle_background(self):
@@ -348,12 +526,16 @@ class InteractiveViewer:
         self._drag_pos = pos
         if np.any(delta):
             self.state.orbit(delta[0], delta[1])
-            self.render(refine=False)
+            self._schedule_preview()
+            self._refine_timer.stop()
+            self._refine_timer.start()
         event.handled = True
 
     def _on_mouse_release(self, event):
         if event.button == 1 and self._drag_pos is not None:
             self._drag_pos = None
+            self._preview_timer.stop()
+            self._refine_timer.stop()
             self.render(refine=True)
             event.handled = True
 
@@ -361,12 +543,29 @@ class InteractiveViewer:
         delta = event.delta
         steps = float(delta[1] if hasattr(delta, "__len__") else delta)
         self.state.zoom(steps)
-        self.render(refine=False)
+        self._schedule_preview()
         self._refine_timer.stop()
         self._refine_timer.start()
         event.handled = True
 
+    def _schedule_preview(self):
+        # Keep only the most recent camera state in each 30 Hz event batch.
+        # Rendering every queued mouse event makes the window lag behind input.
+        if not self._preview_timer.running:
+            self._preview_timer.start()
+
+    def _on_preview_timer(self, _event):
+        self._preview_timer.stop()
+        self.render(refine=False)
+
+    def _on_close(self, _event):
+        self._preview_timer.stop()
+        self._refine_timer.stop()
+        if self._window is not None and not self._window.closing:
+            self._window.close()
+
     def _on_refine_timer(self, _event):
+        self._preview_timer.stop()
         self._refine_timer.stop()
         self.render(refine=True)
 
@@ -374,7 +573,9 @@ class InteractiveViewer:
         # VisPy Key.__str__ returns "<Key 'B'>", not "B". Use the key's
         # name so real backend events and plain-string callers agree.
         key = getattr(event.key, "name", str(event.key)).upper()
-        if key == "R":
+        if key == "H" and self._window is not None:
+            self._window.toggle.trigger()
+        elif key == "R":
             self.state.reset()
             self.render(refine=True)
         elif key == "M":
@@ -382,6 +583,15 @@ class InteractiveViewer:
             self.render(refine=True)
         elif key == "B":
             self.cycle_background()
+        elif key in ("+", "=", "PLUS", "-", "MINUS"):
+            factor = 0.8 if key in ("-", "MINUS") else 1.25
+            self.brightness = float(np.clip(self.brightness * factor, 1 / 32, 32))
+            if self._last_image is not None:
+                started = time.perf_counter()
+                self._last_frame = self._compose(self._last_image)
+                self._visual.set_data(self._last_frame)
+                self._title(time.perf_counter() - started, "brightness")
+                self.canvas.update()
         elif key in ("SPACE", "ENTER", "RETURN"):
             self.render(refine=True)
         elif key == "S":
@@ -403,8 +613,8 @@ class InteractiveViewer:
         return path
 
     def show(self):
-        self.canvas.show()
-        native = self.canvas.native
+        native = self._window if self._window is not None else self.canvas.native
+        native.show()
         if hasattr(native, "raise_"):
             native.raise_()
             native.activateWindow()

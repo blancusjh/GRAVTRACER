@@ -11,8 +11,6 @@ import numpy as np
 from _common import out
 
 import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 import grayt
 
@@ -25,7 +23,10 @@ def main():
                     default=(18.0, -14.0, -9.0))
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("-o", "--output", default=out("rays3d.png"))
+    ap.add_argument("--show", action="store_true", help="open a rotatable native 3D plot")
     args = ap.parse_args()
+    matplotlib.use("QtAgg" if args.show else "Agg")
+    import matplotlib.pyplot as plt
 
     sys3 = grayt.System(physical=grayt.PhysicalSystem(
         spacetime=grayt.BlackHole(a=args.spin)))
@@ -49,6 +50,8 @@ def main():
     ax.legend(loc="upper left")
     ax.figure.savefig(args.output, dpi=180, bbox_inches="tight")
     print(f"wrote {args.output}")
+    if args.show:
+        plt.show()
 
 
 if __name__ == "__main__":

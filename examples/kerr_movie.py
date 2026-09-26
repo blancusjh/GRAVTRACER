@@ -46,7 +46,9 @@ from grayt.animation import VideoWriter, display_frame
 
 SPIN = 0.9
 R_C, TAU_C = 5.0, 1e3   # spreading-disk scale radius [M], tau_perp(r_c)
-DECADES = 8.0           # log color scale spanning all gas that blocks starlight
+DECADES = 7.0           # log color scale
+FLOOR = 0.12            # gas that hides stars is never drawn darker than this
+R_TRUNC = 22.0          # finite disk: the gas ends where its glow has faded
 SKY_GAIN = 1.4          # display brightening of the (uncalibrated) star map
 # The Milky Way's core lies behind the hole for a camera at phi = 90 deg.
 # Start 120 deg earlier, over sparse sky, so the band sweeps in behind the
@@ -109,7 +111,7 @@ def main():
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from _disk_texture import turbulent_disk
 
-    disk = turbulent_disk(bh, r_c=R_C, tau_c=TAU_C)
+    disk = turbulent_disk(bh, r_c=R_C, tau_c=TAU_C, r_trunc=R_TRUNC)
     sky = grayt.CelestialSky.nasa_starmap(gain=SKY_GAIN)
     exposure = None         # fixed from the first frame: no flicker
     from matplotlib import font_manager
@@ -129,7 +131,8 @@ def main():
             image.rgb = grayt.sky.compose_rgb(
                 image.intensity, image.status, image.theta_inf,
                 image.phi_inf, sky, exposure=exposure, tone="log",
-                decades=DECADES, transmission=image.transmission)
+                decades=DECADES, transmission=image.transmission,
+                opaque_floor=FLOOR)
             frame = caption(display_frame(image.rgb, args.ss), camera, t,
                             font, small)
             writer.write(frame)

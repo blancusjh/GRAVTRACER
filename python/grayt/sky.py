@@ -147,13 +147,20 @@ class CelestialSky:
 
 def compose_rgb(
     intensity, status, theta, phi, sky=None, *, exposure=1.0, cmap="afmhot",
-    transmission=None, tone="exp", decades=2.5,
+    transmission=None, tone="exp", decades=2.5, opaque_floor=0.0,
 ):
     """Display-only tone mapping; raw bolometric intensity is never modified.
 
     ``tone="exp"`` maps 1 - exp(-exposure I) onto the colormap. ``tone="log"``
     maps log10(exposure I) over ``decades`` below white (exposure I = 1),
     which keeps Doppler-beamed and dim sides of a disk readable at once.
+
+    ``opaque_floor`` (needs ``transmission``): emitting gas that blocks a
+    fraction 1 - T of the sky is shown at colormap value at least
+    opaque_floor * (1 - T). Thermal gas that hides starlight outshines it
+    by many decades, so drawing it black (below the tone range) would
+    invert the true brightness order; the floor vanishes exactly where the
+    gas turns transparent, so it adds no edge.
 
     With ``transmission`` (per pixel, 0..1) the sky is dimmed by it and the
     emission color is added on top, as for light passing through a
@@ -177,6 +184,9 @@ def compose_rgb(
     else:
         value = np.clip(
             1 + np.log10(exposure * intensity[emitting]) / decades, 0, 1)
+    if opaque_floor and transmission is not None:
+        blocked = 1.0 - np.asarray(transmission, float)[emitting]
+        value = np.maximum(value, opaque_floor * blocked)
     color = matplotlib.colormaps[cmap](value)[..., :3]
     if transmission is None:
         rgb[emitting] = color

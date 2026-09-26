@@ -90,3 +90,19 @@ def test_sky_uses_the_asymptotic_direction():
     esc = (near.status == 0) & (far.status == 0)
     cos = np.sum(unit(near)[esc] * unit(far)[esc], axis=-1)
     assert np.degrees(np.arccos(np.clip(cos, -1, 1))).max() < 0.02
+
+
+def test_opaque_floor_never_draws_blocking_gas_below_the_sky():
+    """Gas hiding the sky is shown at >= floor * (1 - T); none if T = 1."""
+    status = np.zeros((3, 1), int)
+    intensity = np.array([[1e-12], [1e-12], [0.5]])
+    transmission = np.array([[0.0], [1.0], [0.0]])
+    rgb = grayt.sky.compose_rgb(intensity, status, np.zeros((3, 1)),
+                                np.zeros((3, 1)), None, exposure=1.0,
+                                tone="log", decades=6, opaque_floor=0.2,
+                                transmission=transmission)
+    import matplotlib
+    floor = matplotlib.colormaps["afmhot"](0.2)[:3]
+    np.testing.assert_allclose(rgb[0, 0], floor)          # opaque, dim
+    np.testing.assert_allclose(rgb[1, 0], 0.0, atol=1e-12)  # transparent
+    assert rgb[2, 0].sum() > sum(floor)                   # bright unchanged

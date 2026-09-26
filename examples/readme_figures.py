@@ -31,7 +31,8 @@ style.use()
 # radius 5 M so the observer stays well outside the glowing disk.
 CLOSE = dict(r=150, theta=84, phi=90, x=(-40, 40), y=(-25, 25))
 EXPOSURE = 25.0      # white at I = 0.04 (half the peak for a = 0.95)
-DECADES = 8.0        # spans all gas that blocks starlight, so none is shown black
+DECADES = 7.0        # log color scale
+FLOOR = 0.12         # gas that hides stars is never drawn darker than this
 
 
 def close_scene(resolution):
@@ -41,7 +42,8 @@ def close_scene(resolution):
     from _disk_texture import turbulent_disk
 
     spacetime = grayt.BlackHole(a=0.95)
-    disk = turbulent_disk(spacetime, r_c=5.0, tau_c=1e3)
+    # finite disk: the gas ends (r_trunc) where its glow has faded
+    disk = turbulent_disk(spacetime, r_c=5.0, tau_c=1e3, r_trunc=22.0)
     camera = grayt.Camera(resolution=resolution, **CLOSE)
     image = grayt.render_scene(spacetime, camera, disk, escape_radius=300,
                                rtol=2e-9, atol=2e-11)
@@ -54,7 +56,7 @@ def disk_figure():
     rgb = grayt.sky.compose_rgb(
         image.intensity, image.status, image.theta_inf, image.phi_inf, sky,
         exposure=EXPOSURE, tone="log", decades=DECADES,
-        transmission=image.transmission)
+        transmission=image.transmission, opaque_floor=FLOOR)
     fig = plt.figure(figsize=(12.8, 8.4))
     ax = fig.add_axes((0.07, 0.11, 0.88, 0.75))
     ax.imshow(rgb.transpose(1, 0, 2), origin="lower", extent=image.extent)
@@ -66,9 +68,9 @@ def disk_figure():
              "lensed over and under the shadow, the Milky Way around it",
              color=MUTED, fontsize=12.5, style="italic", va="top")
     fig.text(0.07, 0.022,
-             "Color is bolometric intensity on a log scale over 8 decades "
+             "Color is bolometric intensity on a log scale over 7 decades "
              "(like EHT images), not true color. Spreading thin disk "
-             "(Page–Thorne inside),\nprescribed sheared knots, gray slab "
+             "(Page–Thorne inside) truncated at 22 M,\nprescribed sheared knots, gray slab "
              "transfer. Observer at $r = 150$ M. Sky: NASA SVS Deep Star "
              "Maps 2020.", color=MUTED, fontsize=9.5, linespacing=1.5)
     fig.savefig(IMAGES / "kerr_disk.png", dpi=185)
@@ -81,7 +83,7 @@ def color_figure():
     intensity = grayt.sky.compose_rgb(
         image.intensity, image.status, image.theta_inf, image.phi_inf,
         grayt.CelestialSky.nasa_starmap(gain=1.4), exposure=EXPOSURE,
-        tone="log", decades=DECADES, transmission=image.transmission)
+        tone="log", decades=DECADES, transmission=image.transmission, opaque_floor=FLOOR)
     photometry = grayt.photometry.Photometry(1e8, 0.1, spin=spacetime.a)
     _, true_color, _ = grayt.photometry.photometric_render(
         image, photometry, grayt.CelestialSky.nasa_starmap())

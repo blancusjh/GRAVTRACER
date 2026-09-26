@@ -377,6 +377,7 @@ def render_scene(
     observer_time=0.0,
     tone="exp",
     decades=2.5,
+    opaque_floor=0.0,
     photometry=None,
     levels=None,
     **trace_options,
@@ -385,7 +386,8 @@ def render_scene(
 
     Opaque disks stop rays; a ``SlabDisk`` is see-through with gray
     transfer at every crossing. ``tone``/``decades`` choose the display
-    curve (see ``compose_rgb``); raw intensities are unaffected.
+    curve (see ``compose_rgb``; ``opaque_floor`` applies to see-through
+    slabs); raw intensities are unaffected.
 
     With ``photometry`` (a ``grayt.photometry.Photometry``) the RGB is a
     calibrated rendering instead: blackbody emission at g T in physical
@@ -398,7 +400,8 @@ def render_scene(
 
     if isinstance(disk, SlabDisk):
         image = _render_slab(spacetime, camera, disk, surface, sky, exposure,
-                             observer_time, tone, decades, trace_options)
+                             observer_time, tone, decades, trace_options,
+                             opaque_floor)
         return _photometric(image, photometry, sky, levels)
     legacy = isinstance(disk, ThinDisk)
     source_metadata = metadata(disk) if disk else None
@@ -506,7 +509,7 @@ def _transfer(tone, decades):
 
 
 def _render_slab(spacetime, camera, slab, surface, sky, exposure, observer_time,
-                 tone, decades, trace_options):
+                 tone, decades, trace_options, opaque_floor=0.0):
     from .volume import VolumeImage
 
     if surface is not None:
@@ -532,6 +535,7 @@ def _render_slab(spacetime, camera, slab, surface, sky, exposure, observer_time,
         transmission=np.exp(-tau),
         tone=tone,
         decades=decades,
+        opaque_floor=opaque_floor,
     )
     meta = {
         **rays.meta,

@@ -158,7 +158,8 @@ INCLINATIONS = (20, 60, 84)
 # (like EHT images), spanning the whole opaque disk so none of it is shown
 # black. True-color photometry is shown separately in docs/images.
 R_C, TAU_C = 8.0, 1e3   # spreading-disk scale radius [M], tau_perp(r_c)
-DECADES = 8.0           # spans all gas that blocks starlight: none is shown black
+DECADES = 7.0           # log color scale
+FLOOR = 0.12            # gas that hides stars is never drawn darker than this
 
 def models():
     cases = []
@@ -167,7 +168,7 @@ def models():
         st = grayt.BlackHole(spin)
         # Page-Thorne inside, Lynden-Bell & Pringle taper outside: opaque
         # where optically thick, fading as it cools; no edge.
-        disk = grayt.spreading_disk(st, r_c=R_C, tau_c=TAU_C)
+        disk = grayt.spreading_disk(st, r_c=R_C, tau_c=TAU_C, r_trunc=4.4 * R_C)
         for angle in angles:
             cases.append(
                 (
@@ -216,7 +217,7 @@ def models():
     )
     for charge in (0.5, 0.8):
         st = grayt.ReissnerNordstrom(charge)
-        disk = grayt.spreading_disk(st, r_c=12.0, tau_c=TAU_C, base=grayt.EmittingDisk(
+        disk = grayt.spreading_disk(st, r_c=12.0, tau_c=TAU_C, r_trunc=53.0, base=grayt.EmittingDisk(
             6.0,
             180.0,
             lambda r, ph, t: 2e-4 * (6 / r) ** 3 * (1 - np.sqrt(6 / r)),
@@ -315,7 +316,7 @@ def plate(thumbnails, path):
     fig.text(left, 0.925, "Stationary spacetimes and the light they bend",
              color=style.INK, fontsize=26)
     fig.text(left, 0.03,
-             "Color: bolometric intensity on one log scale (8 decades) for all "
+             "Color: bolometric intensity on one log scale (7 decades) for all "
              "panels, not true color. Spreading thin disks (Page–Thorne inside), "
              "gray slab transfer. Stars and charged holes: prescribed emission. "
              "Sky: NASA SVS Deep Star Maps 2020, lensed. Observers at $r = 400$ M.",
@@ -460,7 +461,7 @@ def main():
     ref = grayt.BlackHole(0.95)
     peak = grayt.render_scene(
         ref, replace(camera, theta=60, resolution=(320, 200)),
-        grayt.spreading_disk(ref, r_c=R_C, tau_c=TAU_C),
+        grayt.spreading_disk(ref, r_c=R_C, tau_c=TAU_C, r_trunc=4.4 * R_C),
         escape_radius=800).intensity.max()
     exposure = 1.0 / (0.5 * peak)
     records = []
@@ -476,6 +477,7 @@ def main():
             exposure=exposure,
             tone="log",
             decades=DECADES,
+            opaque_floor=FLOOR,
             rtol=2e-9,
             atol=2e-11,
             escape_radius=800,
@@ -504,7 +506,8 @@ def main():
             (
                 "kerr_camera_orbit",
                 grayt.BlackHole(0.8),
-                grayt.spreading_disk(grayt.BlackHole(0.8), r_c=R_C, tau_c=TAU_C),
+                grayt.spreading_disk(grayt.BlackHole(0.8), r_c=R_C, tau_c=TAU_C,
+                                     r_trunc=4.4 * R_C),
                 None,
             ),
             ("stellar_camera_orbit", grayt.SphericalStar(5), None, next(m[4] for m in models() if m[0] == "star_spots")),
@@ -521,6 +524,7 @@ def main():
                 exposure=exposure,
                 tone="log",
                 decades=DECADES,
+                opaque_floor=FLOOR,
                 archive_every=max(1, frames // 4),
                 coordinate_time_step=1 / 24,
                 rtol=1e-8,

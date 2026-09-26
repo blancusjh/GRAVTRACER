@@ -101,7 +101,7 @@ def main():
     ap.add_argument("-o", "--output", default=out("kerr_orbit.mp4"))
     ap.add_argument("--gif", default=None,
                     help="also write a GIF preview here (needs ffmpeg)")
-    ap.add_argument("--gif-width", type=int, default=560)
+    ap.add_argument("--gif-width", type=int, default=400)
     ap.add_argument("--gif-slowdown", type=float, default=1.5,
                     help="play the GIF this many times slower than the MP4")
     args = ap.parse_args()
@@ -148,7 +148,9 @@ def main():
 
 def write_gif(mp4, gif, width, fps, slowdown):
     """Two-pass palette GIF from the MP4, played ``slowdown`` times slower.
-    Every frame is kept; only the display time per frame grows."""
+    Every frame is kept; only the display time per frame grows. The width
+    and a 96-color ordered-dither palette keep the file under 10 MB so
+    GitHub displays it inline."""
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise RuntimeError("GIF export requires ffmpeg on PATH")
@@ -157,8 +159,9 @@ def write_gif(mp4, gif, width, fps, slowdown):
     subprocess.run(
         [ffmpeg, "-loglevel", "error", "-y", "-i", str(mp4), "-filter_complex",
          f"[0:v]setpts={slowdown:g}*PTS,{scale},split[a][b];"
-         "[a]palettegen=max_colors=192:stats_mode=full[p];"
-         "[b][p]paletteuse=dither=sierra2_4a", str(gif)],
+         "[a]palettegen=max_colors=96:stats_mode=diff[p];"
+         "[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle",
+         str(gif)],
         check=True)
 
 
